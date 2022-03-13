@@ -15,6 +15,7 @@
 #define PINK 0xfb14
 #define GREEN 0x27a4
 #define BLACK 0x0000
+#define WHITE 0xFFFF
 
 // indices (eventually store in EEPROM)
 #define PREHEAT_RAMPUP    0  // C/s  
@@ -40,11 +41,16 @@ Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 
 void setup() {
-  // put your setup code here, to run once:
+  // allow some time before initializing the display
+  // otherwise it seems to invert the image on powerup.
+  delay(50);
   
   tft.begin();
 
   tft.setRotation(0);  // make screen hamburger style
+
+  loading_screen();
+  
   tft.fillScreen(PINK);
   main_screen();
 }
@@ -52,6 +58,26 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
+}
+
+void loading_screen() {
+  tft.fillScreen(WHITE);
+
+  int rect_x_origin = tft.width()/2 - 60;
+  int rect_y_origin = tft.height()/2 - 30;
+  tft.drawRect(rect_x_origin, rect_y_origin, 30, 30, PINK);
+
+  int text_x_origin = tft.width()/2 - 25;
+  int text_y_origin = tft.height()/2 - 10;
+  tft.setCursor(text_x_origin, text_y_origin);
+  tft.setFont(&FreeSerif18pt7b);
+  tft.setTextColor(PINK);
+  tft.println("ASMR");
+
+  delay(100);
+
+  
+  delay(10000);
 }
 
 void main_screen() {

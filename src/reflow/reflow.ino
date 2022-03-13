@@ -76,12 +76,14 @@ void loading_screen() {
 
   delay(100);
 
-  for (int i = 1; i < 50; i++) {
-      tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 - i*10, 30 - i*10, PINK);
-      delay(100);
+  for (int i = 1; i < 40; i++) {
+      tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 + i*10, 30 + i*10, PINK);
+      tft.setCursor(text_x_origin + i*10, text_y_origin+i*10);
+      tft.println("ASMR");
+      delay(50);
   }
   
-  delay(10000);
+  delay(500);
 }
 
 void main_screen() {

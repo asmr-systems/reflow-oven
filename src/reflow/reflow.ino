@@ -13,7 +13,12 @@
 // Use this https://chrishewett.com/blog/true-rgb565-colour-picker/
 // as a color picker.
 #define PINK 0xfb14
+#define ORANGE 0xe2a3
+#define YELLOW 0xe743
+#define VIOLET 0xa97a
 #define GREEN 0x27a4
+#define BLUE 0x23dd
+#define RED 0xe2ab
 #define BLACK 0x0000
 #define WHITE 0xFFFF
 
@@ -71,16 +76,46 @@ void loading_screen() {
   int text_y_origin = tft.height()/2 - 10;
   tft.setCursor(text_x_origin, text_y_origin);
   tft.setFont(&FreeSerif18pt7b);
-  tft.setTextColor(PINK);
+  tft.setTextColor(RED);
   tft.println("ASMR");
 
   delay(100);
-
+  int colors[5] = {PINK, ORANGE, YELLOW, GREEN, VIOLET};
   for (int i = 1; i < 40; i++) {
-      tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 + i*10, 30 + i*10, PINK);
-      tft.setCursor(text_x_origin + i*10, text_y_origin+i*10);
-      tft.println("ASMR");
-      delay(50);
+      tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 + i*20, 30 + i*20, PINK + i*50);
+      if (i < 5) {
+        tft.setCursor(text_x_origin + i*15, text_y_origin+i*15);
+        tft.setTextColor(colors[i]);
+        tft.println("ASMR");
+        delay(100);
+      } else{
+        tft.setCursor(rect_x_origin, rect_y_origin + 200);
+        tft.setTextColor(BLUE);
+        switch (i) {
+          case 5:
+          tft.println("R");
+          break;
+          case 6:
+          tft.println("R E");
+          break;
+          case 7:
+          tft.println("R E F");
+          break;
+          case 8:
+          tft.println("R E F L");
+          break;
+          case 9:
+          tft.println("R E F L O");
+          break;
+          case 10:
+          tft.println("R E F L O W");
+          break;
+          default:
+          tft.println("R E F L O W");
+          break;
+        }
+        delay(50);
+      }
   }
   
   delay(500);

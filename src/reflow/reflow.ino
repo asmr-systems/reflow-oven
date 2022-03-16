@@ -1,6 +1,7 @@
 #include <SPI.h>
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
+#include "Adafruit_STMPE610.h"
 #include <Fonts/FreeSerif18pt7b.h>
 #include <Fonts/FreeSerif9pt7b.h>
 
@@ -8,6 +9,13 @@
 #define TFT_CS 10
 #define TFT_DC 9
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
+#define STMPE_CS 8
+
+// Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
+Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
+
+Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
+
 
 // Color Palette (RGB565) 
 // Use this https://chrishewett.com/blog/true-rgb565-colour-picker/
@@ -40,32 +48,80 @@ float Profiles[3][9] = {
 
 char *ProfileNames[3] = {"Sn42/Bi57.6/Ag0.4", "bar", "bletch"};
 
-
-// Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
-Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
-
+// finite state machine
+enum STATES {
+  MAIN_NOT_RUNNING,
+  MAIN_RUNNING,
+  CHOOSE_PROFILE,
+  EDIT_PROFILE,
+};
+STATES state = MAIN_NOT_RUNNING;
 
 void setup() {
   // allow some time before initializing the display
   // otherwise it seems to invert the image on powerup.
   delay(50);
-  
+
+  // DEBUG
+    Serial.begin(9600);
+  Serial.println("Adafruit STMPE610 example");
+
+  // I don't know why this needs to be pin 10.
+  // if it is gone, it doesn't work. or if it is another pin
+  // it doens't work.
+  pinMode(10, OUTPUT);
+
+  touch.begin();
   tft.begin();
 
   tft.setRotation(0);  // make screen hamburger style
 
-  loading_screen();
+  render_loading_screen();
   
   tft.fillScreen(PINK);
-  main_screen();
+  render_main_screen();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+  switch (state) {
+    case MAIN_NOT_RUNNING:
+      handle_main_screen();
+  }
 
 }
 
-void loading_screen() {
+void handle_main_screen() {
+  // listen for touches
+  uint16_t x, y;
+  uint8_t z;
+  
+  if (touch.touched()) {
+    while (! touch.bufferEmpty()) {
+      touch.readData(&x, &y, &z);
+    }
+
+      Serial.print("->("); 
+      Serial.print(x); Serial.print(", "); 
+      Serial.print(y); Serial.print(", "); 
+      Serial.print(z);
+      Serial.println(")");
+
+    // if in boundaries of buttons
+    if (is_within_start_button(x, y)) {
+      tft.fillRect(tft.width()/2, tft.height()/2, 50, 50, WHITE);
+    }
+  }
+  
+  return;
+}
+
+bool is_within_start_button(uint16_t x, uint16_t y) {
+  if (x > 0 && x < tft.width() && y > 500 && y < tft.height()) return true;
+  return false;
+}
+
+void render_loading_screen() {
   tft.fillScreen(WHITE);
 
   int rect_x_origin = tft.width()/2 - 60;
@@ -121,7 +177,7 @@ void loading_screen() {
   delay(500);
 }
 
-void main_screen() {
+void render_main_screen() {
   int selected_profile = 0;
   main_screen_current_profile(selected_profile);
   profile_plot(0, 40, tft.width(), tft.height()*0.70, selected_profile);
@@ -129,7 +185,7 @@ void main_screen() {
 }
 
 void main_screen_current_profile(int selected_profile) {
-  tft.setCursor(0, 20);
+  tft.setCursor(10, 30);
   tft.setFont(&FreeSerif18pt7b);
   tft.setTextColor(GREEN);
   tft.println(ProfileNames[selected_profile]);

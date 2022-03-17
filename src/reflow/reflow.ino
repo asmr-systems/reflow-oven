@@ -94,17 +94,13 @@ void loop() {
 void handle_main_screen() {
   // listen for touches
   uint16_t x, y;
-  uint8_t z;
-  
-  if (touch.touched()) {
-    while (! touch.bufferEmpty()) {
-      touch.readData(&x, &y, &z);
-    }
 
-      Serial.print("->("); 
+  if (touch.touched()) {
+
+  read_touch(x, y);
+      Serial.print("("); 
       Serial.print(x); Serial.print(", "); 
-      Serial.print(y); Serial.print(", "); 
-      Serial.print(z);
+      Serial.print(y); 
       Serial.println(")");
 
     // if in boundaries of buttons
@@ -114,6 +110,27 @@ void handle_main_screen() {
   }
   
   return;
+}
+
+void read_touch(uint16_t& x, uint16_t& y) {
+   uint8_t z;
+   while (! touch.bufferEmpty()) {
+     touch.readData(&x, &y, &z);
+   }
+
+//         Serial.print("("); 
+//      Serial.print(x); Serial.print(", "); 
+//      Serial.print(y); 
+//      Serial.println(")");
+
+  // max (3681, 3751)
+  // min (558, 364)
+
+  x = constrain(map(x, 558,3681, 0, 320), 0, 320);
+  y = constrain(map(y, 364, 3751, 0, 480), 0, 480);
+//   x = (x/38) - 9;
+//   y = (y/38) - 9;
+   return;
 }
 
 bool is_within_start_button(uint16_t x, uint16_t y) {

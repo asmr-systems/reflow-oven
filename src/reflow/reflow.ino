@@ -63,8 +63,7 @@ void setup() {
   delay(50);
 
   // DEBUG
-    Serial.begin(9600);
-  Serial.println("Adafruit STMPE610 example");
+  Serial.begin(9600);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
@@ -80,6 +79,7 @@ void setup() {
   
   tft.fillScreen(PINK);
   render_main_screen();
+
 }
 
 void loop() {
@@ -96,16 +96,14 @@ void handle_main_screen() {
   uint16_t x, y;
 
   if (touch.touched()) {
-
-  read_touch(x, y);
-      Serial.print("("); 
-      Serial.print(x); Serial.print(", "); 
-      Serial.print(y); 
-      Serial.println(")");
-
+    read_touch(x, y);
+    Serial.print("("); 
+    Serial.print(x); Serial.print(", "); 
+    Serial.print(y); 
+    Serial.println(")");
     // if in boundaries of buttons
     if (is_within_start_button(x, y)) {
-      tft.fillRect(tft.width()/2, tft.height()/2, 50, 50, WHITE);
+      tft.fillCircle(x, y, 10, WHITE);
     }
   }
   
@@ -113,28 +111,21 @@ void handle_main_screen() {
 }
 
 void read_touch(uint16_t& x, uint16_t& y) {
-   uint8_t z;
-   while (! touch.bufferEmpty()) {
-     touch.readData(&x, &y, &z);
-   }
-
-//         Serial.print("("); 
-//      Serial.print(x); Serial.print(", "); 
-//      Serial.print(y); 
-//      Serial.println(")");
+  uint8_t z;
+  while (! touch.bufferEmpty()) {
+    touch.readData(&x, &y, &z);
+  }
 
   // max (3681, 3751)
   // min (558, 364)
-
   x = constrain(map(x, 558,3681, 0, 320), 0, 320);
   y = constrain(map(y, 364, 3751, 0, 480), 0, 480);
-//   x = (x/38) - 9;
-//   y = (y/38) - 9;
+
    return;
 }
 
 bool is_within_start_button(uint16_t x, uint16_t y) {
-  if (x > 0 && x < tft.width() && y > 500 && y < tft.height()) return true;
+  if (x > 0 && x < tft.width() && y > 400 && y < tft.height()) return true;
   return false;
 }
 
@@ -198,6 +189,21 @@ void render_main_screen() {
   int selected_profile = 0;
   main_screen_current_profile(selected_profile);
   profile_plot(0, 40, tft.width(), tft.height()*0.70, selected_profile);
+
+  if (state == MAIN_NOT_RUNNING) {
+    render_start_button();
+  }
+  
+  return;
+}
+
+void render_start_button() {
+  tft.fillRect(10, 400, 150, 60, WHITE);
+  tft.setCursor(20, 440);
+  tft.setFont(&FreeSerif18pt7b);
+  tft.setTextColor(BLACK);
+  tft.println("START");
+  
   return;
 }
 

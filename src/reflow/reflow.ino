@@ -59,25 +59,92 @@ STATES state = MAIN_NOT_RUNNING;
 
 class Button {
 public:
-    uint16_t x;
-    uint16_t y;
-    uint16_t w;
-    uint16_t h;
-    String txt;
-    int color;
+    uint16_t x;              // x origin
+    uint16_t y;              // y origin
+    uint16_t w;              // width
+    uint16_t h;              // height
+    String txt;              // text
+    int color;               // color
+    int alt_color = ORANGE;  // alt color
+    int clear_color = WHITE; // clear color
+    struct {
+        int x = 10;
+        int y = 40;
+    } txt_margin;    // text margin
 
     Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color)
         : x(x), y(y), w(w), h(h), txt(txt), color(color)
         {}
 
-    void render() {
-
+    void update() {
+        if (is_pressed()) {
+            render(alt_color, BLACK);
+        }
     }
+
+    void render() {
+        render(color, BLACK);
+    }
+    void render(int _color, int txt_color) {
+        tft.fillRect(x, y, w, h, _color);
+        tft.setCursor(x + txt_margin.x, y + txt_margin.y);
+        tft.setFont(&FreeSerif18pt7b);
+        tft.setTextColor(txt_color);
+        tft.println(txt);
+    }
+
+    void clear() {
+        tft.fillRect(x, y, w, h, clear_color);
+    }
+
+    bool is_unpressed() {
+        if (unpressed) {
+            unpressed = false;
+            return true;
+        }
+        return unpressed;
+    }
+
+private:
+    bool pressed = false;
+    bool unpressed = false;
 
     bool is_pressed() {
-
+        uint16_t _x, _y;
+        read_touch(_x, _y);
+        if (is_within_bounds(_x, _y)) {
+            pressed = true;
+        } else {
+            if (pressed) unpressed = true;
+            pressed = false;
+        }
+        return pressed;
     }
+
+    void read_touch(uint16_t& _x, uint16_t& _y) {
+        uint8_t z;
+        while (! touch.bufferEmpty()) {
+            touch.readData(&_x, &_y, &z);
+        }
+
+        // max (3681, 3751)
+        // min (558, 364)
+        _x = constrain(map(_x, 558,3681, 0, 320), 0, 320);
+        _y = constrain(map(_y, 364, 3751, 0, 480), 0, 480);
+
+        return;
+    }
+
+    bool is_within_bounds(uint16_t _x, uint16_t _y) {
+        if (_x > x && _x < (x + w) && _y > y && _y < (y+h)) return true;
+        return false;
+    }
+
 };
+
+
+Button start_button = Button(10, 400, 150, 60, "Start", WHITE);
+
 
 void setup() {
   // allow some time before initializing the display
@@ -125,6 +192,9 @@ void handle_main_screen() {
     Serial.print(x); Serial.print(", ");
     Serial.print(y);
     Serial.println(")");
+
+    start_button.update();
+
     // if in boundaries of buttons
     if (state == MAIN_NOT_RUNNING && is_within_start_button(x, y)) {
       state = MAIN_RUNNING;
@@ -218,7 +288,8 @@ void render_main_screen() {
   profile_plot(0, 40, tft.width(), tft.height()*0.70, selected_profile);
 
   if (state == MAIN_NOT_RUNNING) {
-    render_start_button();
+      start_button.render();
+    // render_start_button();
   }
 
   return;

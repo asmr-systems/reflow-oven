@@ -17,7 +17,7 @@ Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 
 
-// Color Palette (RGB565) 
+// Color Palette (RGB565)
 // Use this https://chrishewett.com/blog/true-rgb565-colour-picker/
 // as a color picker.
 #define PINK 0xfb14
@@ -31,7 +31,7 @@ Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 #define WHITE 0xFFFF
 
 // indices (eventually store in EEPROM)
-#define PREHEAT_RAMPUP    0  // C/s  
+#define PREHEAT_RAMPUP    0  // C/s
 #define SOAK_START_TEMP   1  // C
 #define SOAK_END_TEMP     2  // C
 #define SOAK_DURATION     3  // s
@@ -57,6 +57,28 @@ enum STATES {
 };
 STATES state = MAIN_NOT_RUNNING;
 
+class Button {
+public:
+    uint16_t x;
+    uint16_t y;
+    uint16_t w;
+    uint16_t h;
+    String txt;
+    int color;
+
+    Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color)
+        : x(x), y(y), w(w), h(h), txt(txt), color(color)
+        {}
+
+    void render() {
+
+    }
+
+    bool is_pressed() {
+
+    }
+};
+
 void setup() {
   // allow some time before initializing the display
   // otherwise it seems to invert the image on powerup.
@@ -76,7 +98,7 @@ void setup() {
   tft.setRotation(0);  // make screen hamburger style
 
   render_loading_screen();
-  
+
   tft.fillScreen(PINK);
   render_main_screen();
 
@@ -86,7 +108,9 @@ void loop() {
   // put your main code here, to run repeatedly:
   switch (state) {
     case MAIN_NOT_RUNNING:
+    case MAIN_RUNNING:
       handle_main_screen();
+      break;
   }
 
 }
@@ -97,16 +121,19 @@ void handle_main_screen() {
 
   if (touch.touched()) {
     read_touch(x, y);
-    Serial.print("("); 
-    Serial.print(x); Serial.print(", "); 
-    Serial.print(y); 
+    Serial.print("(");
+    Serial.print(x); Serial.print(", ");
+    Serial.print(y);
     Serial.println(")");
     // if in boundaries of buttons
-    if (is_within_start_button(x, y)) {
-      tft.fillCircle(x, y, 10, WHITE);
+    if (state == MAIN_NOT_RUNNING && is_within_start_button(x, y)) {
+      state = MAIN_RUNNING;
+    }
+    if (state == MAIN_RUNNING && is_within_start_button(x, y)) {
+      state = MAIN_NOT_RUNNING;
     }
   }
-  
+
   return;
 }
 
@@ -125,7 +152,7 @@ void read_touch(uint16_t& x, uint16_t& y) {
 }
 
 bool is_within_start_button(uint16_t x, uint16_t y) {
-  if (x > 0 && x < tft.width() && y > 400 && y < tft.height()) return true;
+  if (x > 10 && x < 160 && y > 400 && y < 460) return true;
   return false;
 }
 
@@ -181,7 +208,7 @@ void render_loading_screen() {
         delay(50);
       }
   }
-  
+
   delay(500);
 }
 
@@ -193,7 +220,7 @@ void render_main_screen() {
   if (state == MAIN_NOT_RUNNING) {
     render_start_button();
   }
-  
+
   return;
 }
 
@@ -203,7 +230,7 @@ void render_start_button() {
   tft.setFont(&FreeSerif18pt7b);
   tft.setTextColor(BLACK);
   tft.println("START");
-  
+
   return;
 }
 
@@ -231,7 +258,7 @@ void profile_plot_curve(int x, int y, int w, int h, int selected_profile) {
 
   int x_s = x; int x_e = x_s + (w*(preheat_duration/total_duration));
   tft.drawLine(x_s, y+h, x_e, y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-  
+
   x_s = x_e; x_e = x_s + (w*(soak_duration/total_duration));
   tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h - (h* (Profiles[selected_profile][SOAK_END_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
 
@@ -245,7 +272,7 @@ void profile_plot_curve(int x, int y, int w, int h, int selected_profile) {
 
   x_s = x_e; x_e = x_s + (w*((cooldown_duration)/total_duration));
   tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h), PINK);
-  
+
   tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
   tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
   tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
@@ -261,25 +288,25 @@ void profile_plot_axis(int x, int y, int w, int h, int margin_x, int margin_y, i
   // === draw important temperatures and dashed lines ===
   tft.setFont(&FreeSerif9pt7b);
   tft.setTextColor(PINK);
-  
+
   // peak temp
   int peak_temp = y+margin_y;
   tft.setCursor(x, peak_temp);
   tft.println((int)Profiles[selected_profile][REFLOW_PEAK_TEMP]);
   for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, peak_temp, dashed_line_len, GREEN);
-  
+
   // reflow temp (liquidus)
   int reflow_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
   tft.setCursor(x, reflow_temp);
   tft.println((int)Profiles[selected_profile][REFLOW_START_TEMP]);
   for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, reflow_temp, dashed_line_len, GREEN);
-  
+
   // soak temp
   int soak_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
   tft.setCursor(x, soak_temp);
   tft.println((int)Profiles[selected_profile][SOAK_START_TEMP]);
   for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, soak_temp, dashed_line_len, GREEN);
-  
+
   // zero
   int zero_temp = y+margin_y+((h-2*margin_y)-(0/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-margin_y));
   tft.setCursor(x, zero_temp);

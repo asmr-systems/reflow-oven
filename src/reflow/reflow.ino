@@ -16,6 +16,11 @@ Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 
+void dashedHLine(int x, int y, int w, int dash_len, int color) {
+    for(int i=x; i<(w); i+=(dash_len*2)) {
+        tft.drawFastHLine(i, y, dash_len, color);
+    }
+}
 
 // Color Palette (RGB565)
 // Use this https://chrishewett.com/blog/true-rgb565-colour-picker/
@@ -160,6 +165,16 @@ public:
     // temperature readings.
 };
 
+enum PHASE_IDX {
+    STANDBY,
+    PREHEAT,
+    SOAK,
+    SOLDER_PREHEAT,
+    SOLDER,
+    COOLDOWN,
+};
+char* phase_names = {"standby", "preheat", "soak", "solder preheat", "solder", "cooldown"};
+
 class Phases {
 public:
     // information about phase duration, start, end temp, etc.
@@ -179,6 +194,7 @@ public:
     phase cooldown;
 
     int total_duration;
+    PHASE_IDX current_phase = 0;
 
     Phases(int profile) {
         calculate_from_profile(profile);
@@ -226,6 +242,86 @@ public:
     }
 };
 
+class Plot {
+public:
+    int x, y, w, h;
+    Phases* phases;
+
+    struct {
+        int margin_x = 18;
+        int margin_y = 18;
+        int width    = 15;
+    } axes;
+
+    struct {
+        int bg               = WHITE;
+        int axes             = BLACK;
+        int thermal_profile  = BLUE;
+        int measurements     = PINK;
+        int current_phase_bg = YELLOW;
+    } colors;
+
+    struct {
+        struct {
+            float preheat        = 0.2;
+            float soak           = 0.2;
+            float solder_preheat = 0.2;
+            float solder         = 0.2;
+            float cooldown       = 0.2;
+        } time; // must sum to 1
+        struct {
+            float preheat        = 0.2;
+            float soak           = 0.2;
+            float solder_preheat = 0.2;
+            float solder         = 0.2;
+            float cooldown       = 0.2;
+        } temp; // must sum to 1
+    } scaling;
+
+    Plot(int x, int y, int w, int h, Phases* phases)
+        : x(x), y(y), w(w), h(h), phases(phases) {}
+
+    void render() {}
+
+    void render_axes() {
+        // make backgorund of axis
+        tft.fillRect(x, y, w, h, colors.bg);
+
+        int dashlen = 5;
+        // === draw important temperatures and dashed lines ===
+        tft.setFont(&FreeSerif9pt7b);
+        tft.setTextColor(colors.axes);
+        int font_offset = 4;
+
+        // peak temp
+        int peak_temp = y+axes.margin_y;
+        tft.setCursor(x, peak_temp + font_offset);
+        tft.println((int)(phases->solder.peak_temp));
+        dashedHLine(axes.margin_x+axes.width, peak_temp, dash_len, colors.axes);
+
+        // reflow temp (liquidus)
+        int reflow_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
+        tft.setCursor(x, reflow_temp);
+        tft.println((int)Profiles[selected_profile][REFLOW_START_TEMP]);
+        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, reflow_temp, dashed_line_len, GREEN);
+
+        // soak temp
+        int soak_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
+        tft.setCursor(x, soak_temp);
+        tft.println((int)Profiles[selected_profile][SOAK_START_TEMP]);
+        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, soak_temp, dashed_line_len, GREEN);
+
+        // zero
+        int zero_temp = y+margin_y+((h-2*margin_y)-(0/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-margin_y));
+        tft.setCursor(x, zero_temp);
+        tft.println("   0");
+        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, zero_temp, dashed_line_len, GREEN);
+    }
+
+    void render_thermal_profile() {}
+
+    void render_temperature_measurement(Temperature temp, Clock clk) {}
+};
 
 Button start_button = Button(10, 400, 150, 60, "Start", WHITE);
 Button profile_button = Button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);

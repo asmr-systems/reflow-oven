@@ -59,21 +59,23 @@ STATES state = MAIN_NOT_RUNNING;
 
 class Button {
 public:
-    uint16_t x;              // x origin
-    uint16_t y;              // y origin
-    uint16_t w;              // width
-    uint16_t h;              // height
-    String txt;              // text
-    int color;               // color
-    int alt_color = ORANGE;  // alt color
-    int clear_color = WHITE; // clear color
+    uint16_t x;                       // x origin
+    uint16_t y;                       // y origin
+    uint16_t w;                       // width
+    uint16_t h;                       // height
+    String txt;                       // text
+    int color;                        // color
+    GFXfont* font;                    // font
+    int alt_color = ORANGE;           // alt color
+    int clear_color = WHITE;          // clear color
+
     struct {
         int x = 10;
         int y = 40;
     } txt_margin;    // text margin
 
-    Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color)
-        : x(x), y(y), w(w), h(h), txt(txt), color(color)
+    Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color, GFXfont* font = &FreeSerif18pt7b)
+        : x(x), y(y), w(w), h(h), txt(txt), color(color), font(font)
         {}
 
     void update() {
@@ -105,11 +107,17 @@ public:
         return unpressed;
     }
 
+    void disable() { disabled = true; }
+    void enable() { disabled = false; }
+
 private:
     bool pressed = false;
     bool unpressed = false;
+    bool disabled = false;            // button is disabled
 
     bool is_pressed() {
+        if (disabled) return false;
+
         uint16_t _x, _y;
         read_touch(_x, _y);
         if (is_within_bounds(_x, _y)) {
@@ -142,8 +150,85 @@ private:
 
 };
 
+class Clock {
+public:
+    // count down clock
+};
+
+class Temperature {
+public:
+    // temperature readings.
+};
+
+class Phases {
+public:
+    // information about phase duration, start, end temp, etc.
+
+    struct phase {
+        int start_temp; // in Celcius
+        int end_temp;   // in Celcius
+        float rate;     // in C/s
+        int duration;   // in seconds
+        int peak_temp;  // in Celcius
+    };
+
+    phase preheat;
+    phase soak;
+    phase reflow_rampup;
+    phase reflow;           // temperature above liquidus
+    phase cooldown;
+
+    int total_duration;
+
+    Phases(int profile) {
+        calculate_from_profile(profile);
+    }
+
+    void calculate_from_profile(int prof, float initial_temp = 25.0) {
+
+        // pre-heat
+        preheat.start_temp = initial_temp;
+        preheat.end_temp   = Profiles[prof][SOAK_START_TEMP];
+        preheat.rate       = Profiles[prof][PREHEAT_RAMPUP];
+        preheat.duration   = (Profiles[prof][SOAK_START_TEMP] - preheat.start_temp)/Profiles[prof][PREHEAT_RAMPUP];
+        preheat.peak_temp  = preheat.end_temp;
+
+        // soak
+        soak.start_temp = Profiles[prof][SOAK_START_TEMP];
+        soak.end_temp   = Profiles[prof][SOAK_END_TEMP];
+        soak.rate       = (soak.end_temp-soak.start_temp)/soak.duration;
+        soak.duration   = Profiles[prof][SOAK_DURATION];
+        soak.peak_temp  = soak.end_temp;
+
+        // reflow_ramp
+        reflow_ramp.start_temp = soak.end_temp;
+        reflow_ramp.end_temp   = Profiles[prof][REFLOW_START_TEMP];
+        reflow_ramp.rate       = Profiles[prof][REFLOW_RAMPUP];
+        reflow_ramp.duration   = (reflow_ramp.end_temp - reflow_ramp.start_temp)/reflow_ramp.rate;
+        reflow_ramp.peak_temp  = reflow_ramp.end_temp;
+
+        // reflow
+        reflow.start_temp = Profiles[prof][REFLOW_START_TEMP];
+        reflow.end_temp   = Profiles[prof][REFLOW_START_TEMP];
+        reflow.duration   = Profiles[prof][REFLOW_DURATION];
+        reflow.peak_temp  = Profiles[prof][REFLOW_PEAK];
+        reflow.rate       = 2*(reflow.peak_temp - reflow.start_temp)/reflow.duration;
+
+        // cooldown
+        cooldown.start_temp = reflow.end_temp;
+        cooldown.end_temp   = initial_temp;
+        cooldown.rate       = Profiles[prof][COOLDOWN];
+        cooldown.duration   = (cooldown.end_temp - cooldown.start_temp)/cooldown.rate;
+        cooldown.peak_temp  = reflow.end_temp;
+
+        // total
+        total_duration = preheat.duration + soak.duration + reflow_ramp.duration +reflow.duration + cooldown.duration;
+    }
+}
 
 Button start_button = Button(10, 400, 150, 60, "Start", WHITE);
+Button profile_button = Button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
+Phases phases(selected_profile);
 
 
 void setup() {
@@ -159,10 +244,15 @@ void setup() {
   // it doens't work.
   pinMode(10, OUTPUT);
 
+  // begin capacitive touch sensor and lcd screen
   touch.begin();
   tft.begin();
 
   tft.setRotation(0);  // make screen hamburger style
+
+  // configure gui stuff
+  profile_button.txt_margin.x = 10;
+  profile_button.txt_margin.y = 30;
 
   render_loading_screen();
 
@@ -179,7 +269,6 @@ void loop() {
       handle_main_screen();
       break;
   }
-
 }
 
 void handle_main_screen() {

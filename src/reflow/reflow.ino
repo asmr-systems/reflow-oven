@@ -45,8 +45,8 @@ float Profiles[3][9] = {
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
-
 char *ProfileNames[3] = {"Sn42/Bi57.6/Ag0.4", "bar", "bletch"};
+int selected_profile = 0;
 
 // finite state machine
 enum STATES {
@@ -201,17 +201,17 @@ public:
         soak.peak_temp  = soak.end_temp;
 
         // reflow_ramp
-        reflow_ramp.start_temp = soak.end_temp;
-        reflow_ramp.end_temp   = Profiles[prof][REFLOW_START_TEMP];
-        reflow_ramp.rate       = Profiles[prof][REFLOW_RAMPUP];
-        reflow_ramp.duration   = (reflow_ramp.end_temp - reflow_ramp.start_temp)/reflow_ramp.rate;
-        reflow_ramp.peak_temp  = reflow_ramp.end_temp;
+        reflow_rampup.start_temp = soak.end_temp;
+        reflow_rampup.end_temp   = Profiles[prof][REFLOW_START_TEMP];
+        reflow_rampup.rate       = Profiles[prof][REFLOW_RAMPUP];
+        reflow_rampup.duration   = (reflow_rampup.end_temp - reflow_rampup.start_temp)/reflow_rampup.rate;
+        reflow_rampup.peak_temp  = reflow_rampup.end_temp;
 
         // reflow
         reflow.start_temp = Profiles[prof][REFLOW_START_TEMP];
         reflow.end_temp   = Profiles[prof][REFLOW_START_TEMP];
         reflow.duration   = Profiles[prof][REFLOW_DURATION];
-        reflow.peak_temp  = Profiles[prof][REFLOW_PEAK];
+        reflow.peak_temp  = Profiles[prof][REFLOW_PEAK_TEMP];
         reflow.rate       = 2*(reflow.peak_temp - reflow.start_temp)/reflow.duration;
 
         // cooldown
@@ -222,9 +222,10 @@ public:
         cooldown.peak_temp  = reflow.end_temp;
 
         // total
-        total_duration = preheat.duration + soak.duration + reflow_ramp.duration +reflow.duration + cooldown.duration;
+        total_duration = preheat.duration + soak.duration + reflow_rampup.duration +reflow.duration + cooldown.duration;
     }
-}
+};
+
 
 Button start_button = Button(10, 400, 150, 60, "Start", WHITE);
 Button profile_button = Button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
@@ -372,7 +373,7 @@ void render_loading_screen() {
 }
 
 void render_main_screen() {
-  int selected_profile = 0;
+  // int selected_profile = 0;
   main_screen_current_profile(selected_profile);
   profile_plot(0, 40, tft.width(), tft.height()*0.70, selected_profile);
 

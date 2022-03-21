@@ -171,9 +171,9 @@ enum PHASE_IDX {
     SOAK,
     SOLDER_PREHEAT,
     SOLDER,
-    COOLDOWN,
+    COOLOFF,
 };
-char* phase_names = {"standby", "preheat", "soak", "solder preheat", "solder", "cooldown"};
+char* phase_names[6] = {"standby", "preheat", "soak", "solder preheat", "solder", "cooldown"};
 
 class Phases {
 public:
@@ -265,15 +265,15 @@ public:
         struct {
             float preheat        = 0.2;
             float soak           = 0.2;
-            float solder_preheat = 0.2;
-            float solder         = 0.2;
+            float reflow_preheat = 0.2;
+            float reflow         = 0.2;
             float cooldown       = 0.2;
         } time; // must sum to 1
         struct {
             float preheat        = 0.2;
             float soak           = 0.2;
-            float solder_preheat = 0.2;
-            float solder         = 0.2;
+            float reflow_preheat = 0.2;
+            float reflow         = 0.2;
             float cooldown       = 0.2;
         } temp; // must sum to 1
     } scaling;
@@ -287,7 +287,7 @@ public:
         // make backgorund of axis
         tft.fillRect(x, y, w, h, colors.bg);
 
-        int dashlen = 5;
+        int dash_len = 5;
         // === draw important temperatures and dashed lines ===
         tft.setFont(&FreeSerif9pt7b);
         tft.setTextColor(colors.axes);
@@ -296,26 +296,26 @@ public:
         // peak temp
         int peak_temp = y+axes.margin_y;
         tft.setCursor(x, peak_temp + font_offset);
-        tft.println((int)(phases->solder.peak_temp));
-        dashedHLine(axes.margin_x+axes.width, peak_temp, dash_len, colors.axes);
+        tft.println((int)(phases->reflow.peak_temp));
+        dashedHLine(axes.margin_x+axes.width, peak_temp, w - axes.width, dash_len, colors.axes);
 
-        // reflow temp (liquidus)
-        int reflow_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
-        tft.setCursor(x, reflow_temp);
-        tft.println((int)Profiles[selected_profile][REFLOW_START_TEMP]);
-        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, reflow_temp, dashed_line_len, GREEN);
+        // // reflow temp (liquidus)
+        // int reflow_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
+        // tft.setCursor(x, reflow_temp);
+        // tft.println((int)Profiles[selected_profile][REFLOW_START_TEMP]);
+        // for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, reflow_temp, dashed_line_len, GREEN);
 
-        // soak temp
-        int soak_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
-        tft.setCursor(x, soak_temp);
-        tft.println((int)Profiles[selected_profile][SOAK_START_TEMP]);
-        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, soak_temp, dashed_line_len, GREEN);
+        // // soak temp
+        // int soak_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
+        // tft.setCursor(x, soak_temp);
+        // tft.println((int)Profiles[selected_profile][SOAK_START_TEMP]);
+        // for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, soak_temp, dashed_line_len, GREEN);
 
-        // zero
-        int zero_temp = y+margin_y+((h-2*margin_y)-(0/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-margin_y));
-        tft.setCursor(x, zero_temp);
-        tft.println("   0");
-        for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, zero_temp, dashed_line_len, GREEN);
+        // // zero
+        // int zero_temp = y+margin_y+((h-2*margin_y)-(0/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-margin_y));
+        // tft.setCursor(x, zero_temp);
+        // tft.println("   0");
+        // for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, zero_temp, dashed_line_len, GREEN);
     }
 
     void render_thermal_profile() {}

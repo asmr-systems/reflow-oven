@@ -84,8 +84,13 @@ public:
         {}
 
     void update() {
-        if (is_pressed()) {
+        if (!pressed && is_pressed()) {
             render(alt_color, BLACK);
+            return;
+        }
+        if (pressed && !is_pressed()) {
+            render(color, BLACK);
+            return;
         }
     }
 
@@ -120,8 +125,22 @@ private:
     bool unpressed = false;
     bool disabled = false;            // button is disabled
 
+    unsigned long start_time = 0;
+    unsigned long delay_time = 100;
+
     bool is_pressed() {
-        if (disabled) return false;
+        // enforce sampling interval
+        if (millis() - start_time > delay_time) {
+            start_time = millis();
+        } else {
+            return pressed;
+        }
+
+        if (disabled || !touch.touched()) {
+            if (pressed) unpressed = true;
+            pressed = false;
+            return pressed;
+        }
 
         uint16_t _x, _y;
         read_touch(_x, _y);
@@ -131,6 +150,13 @@ private:
             if (pressed) unpressed = true;
             pressed = false;
         }
+
+        // if (pressed) {
+        //     Serial.println("PRESSED");
+        // } else {
+        //     Serial.println("NOT PRESSED");
+        // }
+
         return pressed;
     }
 
@@ -370,25 +396,27 @@ void loop() {
 
 void handle_main_screen() {
   // listen for touches
-  uint16_t x, y;
+  // uint16_t x, y;
 
-  if (touch.touched()) {
-    read_touch(x, y);
-    Serial.print("(");
-    Serial.print(x); Serial.print(", ");
-    Serial.print(y);
-    Serial.println(")");
+  // if (touch.touched()) {
+  //   read_touch(x, y);
+  //   Serial.print("(");
+  //   Serial.print(x); Serial.print(", ");
+  //   Serial.print(y);
+  //   Serial.println(")");
 
-    start_button.update();
+  //   start_button.update();
 
-    // if in boundaries of buttons
-    if (state == MAIN_NOT_RUNNING && is_within_start_button(x, y)) {
-      state = MAIN_RUNNING;
-    }
-    if (state == MAIN_RUNNING && is_within_start_button(x, y)) {
-      state = MAIN_NOT_RUNNING;
-    }
-  }
+  //   // if in boundaries of buttons
+  //   // if (state == MAIN_NOT_RUNNING && is_within_start_button(x, y)) {
+  //   //   state = MAIN_RUNNING;
+  //   // }
+  //   // if (state == MAIN_RUNNING && is_within_start_button(x, y)) {
+  //   //   state = MAIN_NOT_RUNNING;
+  //   // }
+  // }
+
+  start_button.update();
 
   return;
 }

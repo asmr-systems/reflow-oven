@@ -46,11 +46,11 @@ void dashedHLine(int x, int y, int w, int dash_len, int color) {
 #define REFLOW_DURATION   7  // s
 #define COOLDOWN          8  // C/s
 float Profiles[3][9] = {
+  {1.4, 150, 175, 90, 0.84, 217, 250, 120, 4.4},
   {1, 100, 110, 40, 5, 138, 150, 20, 5},
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
-  {0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
-char *ProfileNames[3] = {"Sn42/Bi57.6/Ag0.4", "bar", "bletch"};
+char *ProfileNames[3] = {"SAC305", "Sn/Bi57.6/Ag0.4", "bletch"};
 int selected_profile = 0;
 
 // finite state machine
@@ -76,7 +76,7 @@ public:
 
     struct {
         int x = 10;
-        int y = 40;
+        int y = 30;
     } txt_margin;    // text margin
 
     Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color, GFXfont* font = &FreeSerif18pt7b)
@@ -181,16 +181,6 @@ private:
 
 };
 
-class Clock {
-public:
-    // count down clock
-};
-
-class Temperature {
-public:
-    // temperature readings.
-};
-
 enum PHASE_IDX {
     STANDBY,
     PREHEAT,
@@ -268,6 +258,70 @@ public:
     }
 };
 
+class Clock {
+public:
+    // count down clock
+    int time_elapsed = 0;
+    int time_remaining = 0;
+
+    int txt_color = BLACK;
+    int bg_color = WHITE;
+    int x;
+    int y;
+    Clock(Phases* phases, int x, int y) : phases(phases), x(x), y(y) {
+        reset();
+    }
+
+    void start() {
+        reset();
+        start_time = millis();
+    }
+
+    void reset() {
+        time_elapsed = 0;
+        time_remaining = phases->total_duration;
+    }
+
+    void update() {
+        if (tick()) {
+            render();
+        }
+    }
+
+    bool tick() {
+        if (millis() - start_time > 1000) {
+            start_time = millis();
+            time_elapsed++;
+            time_remaining--;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    void render() {
+        tft.fillRect(x, y, 80, 40, bg_color);
+        tft.setCursor(x + 10, y + 30);
+        tft.setFont(&FreeSerif18pt7b);
+        tft.setTextColor(txt_color);
+        tft.print(time_remaining/60);
+        tft.print(":");
+        if (time_remaining%60 < 10) tft.print("0");
+        tft.print(time_remaining%60);
+    }
+
+private:
+    Phases* phases;
+    unsigned long start_time = 0;
+};
+
+class Temperature {
+public:
+    // temperature readings.
+};
+
+
 class Plot {
 public:
     int x, y, w, h;
@@ -289,9 +343,9 @@ public:
 
     struct {
         struct {
-            float below_soak     = 0.2;
-            float soak_to_reflow = 0.2;
-            float reflow_to_peak = 0.2;
+            float below_soak     = 0.3;
+            float soak_to_reflow = 0.4;
+            float reflow_to_peak = 0.3;
         } temp; // must sum to 1
         struct {
             float preheat        = 0.2;
@@ -404,25 +458,28 @@ public:
     void render_temperature_measurement(Temperature temp, Clock clk) {}
 private:
     int scale_temp(float temp) {
-        float factor, base;
+        float range_percent, range_scale, range_offset;
+        float H = h - (2*axes.margin_y);
         if (temp < phases->soak.start_temp) {
             // preheat
-            temp = (temp - 0) / phases->soak.start_temp;
-            factor = scaling.temp.below_soak;
-            base = 0;
+            range_percent = temp / phases->soak.start_temp;
+            range_scale = scaling.temp.below_soak;
+            range_offset = 0;
         } else if (temp >= phases->soak.start_temp && temp < phases->reflow.start_temp) {
             // soak
-            temp = (temp - phases->soak.start_temp) / (phases->reflow.start_temp - phases->soak.start_temp);
-            factor = scaling.temp.soak_to_reflow;
-            base = scaling.temp.below_soak;
+            range_percent = (temp - phases->soak.start_temp) / (phases->reflow.start_temp - phases->soak.start_temp);
+            range_scale = scaling.temp.soak_to_reflow;
+            range_offset = scaling.temp.below_soak;
         } else if (temp >= phases->reflow.start_temp) {
             // reflow
-            temp = (temp - phases->reflow.start_temp) / (phases->reflow.peak_temp - phases->reflow.start_temp);
-            factor = scaling.temp.reflow_to_peak;
-            base = scaling.temp.below_soak + scaling.temp.soak_to_reflow;
+            range_percent = (temp - phases->reflow.start_temp) / (phases->reflow.peak_temp - phases->reflow.start_temp);
+            range_scale = scaling.temp.reflow_to_peak;
+            range_offset = scaling.temp.below_soak + scaling.temp.soak_to_reflow;
         }
 
-        return y + axes.margin_y + ((1 - temp)*factor*(h-(2*axes.margin_y))) + base*(h-(2*axes.margin_y));
+        temp = H * (1 - (range_percent*range_scale + range_offset));
+
+        return y + axes.margin_y + temp;
     }
 
     int scale_time(float t) {
@@ -430,10 +487,11 @@ private:
     }
 };
 
-Button start_button(10, 400, 150, 60, "Start", WHITE);
+Button start_button(10, 405, 140, 40, "START", WHITE);
 Button profile_button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
 Phases phases(selected_profile);
 Plot plot(0, 40, tft.width(), tft.height()*0.70, &phases);
+Clock clock(&phases, 180, 390);
 
 
 void setup() {
@@ -470,57 +528,48 @@ void loop() {
   // put your main code here, to run repeatedly:
   switch (state) {
     case MAIN_NOT_RUNNING:
+        start_button.update();
+        if (start_button.is_unpressed()) {
+            start_button.txt = "ABORT";
+            state = MAIN_RUNNING;
+            clock.start();
+            start_button.render();
+        }
+        break;
     case MAIN_RUNNING:
-      handle_main_screen();
-      break;
+        clock.update();
+        break;
   }
 }
 
 void handle_main_screen() {
-  // listen for touches
-  // uint16_t x, y;
-
-  // if (touch.touched()) {
-  //   read_touch(x, y);
-  //   Serial.print("(");
-  //   Serial.print(x); Serial.print(", ");
-  //   Serial.print(y);
-  //   Serial.println(")");
-
-  //   start_button.update();
-
-  //   // if in boundaries of buttons
-  //   // if (state == MAIN_NOT_RUNNING && is_within_start_button(x, y)) {
-  //   //   state = MAIN_RUNNING;
-  //   // }
-  //   // if (state == MAIN_RUNNING && is_within_start_button(x, y)) {
-  //   //   state = MAIN_NOT_RUNNING;
-  //   // }
-  // }
-
-  start_button.update();
 
   return;
 }
 
-void read_touch(uint16_t& x, uint16_t& y) {
-  uint8_t z;
-  while (! touch.bufferEmpty()) {
-    touch.readData(&x, &y, &z);
-  }
+void render_main_screen() {
+    // int selected_profile = 0;
+    main_screen_current_profile(selected_profile);
+    plot.render();
+    clock.render();
 
-  // max (3681, 3751)
-  // min (558, 364)
-  x = constrain(map(x, 558,3681, 0, 320), 0, 320);
-  y = constrain(map(y, 364, 3751, 0, 480), 0, 480);
+    if (state == MAIN_NOT_RUNNING) {
+        start_button.render();
+    }
 
-   return;
+    return;
 }
 
-bool is_within_start_button(uint16_t x, uint16_t y) {
-  if (x > 10 && x < 160 && y > 400 && y < 460) return true;
-  return false;
+void main_screen_current_profile(int selected_profile) {
+    tft.setCursor(10, 30);
+    tft.setFont(&FreeSerif18pt7b);
+    tft.setTextColor(GREEN);
+    tft.println(ProfileNames[selected_profile]);
 }
+
+
+//:::::: LOADING SCREEN
+//::::::::::::::::::::::::::
 
 void render_loading_screen() {
   tft.fillScreen(WHITE);
@@ -576,108 +625,4 @@ void render_loading_screen() {
   }
 
   delay(500);
-}
-
-void render_main_screen() {
-  // int selected_profile = 0;
-  main_screen_current_profile(selected_profile);
-  plot.render();
-  //profile_plot(0, 40, tft.width(), tft.height()*0.70, selected_profile);
-
-  if (state == MAIN_NOT_RUNNING) {
-      start_button.render();
-    // render_start_button();
-  }
-
-  return;
-}
-
-void render_start_button() {
-  tft.fillRect(10, 400, 150, 60, WHITE);
-  tft.setCursor(20, 440);
-  tft.setFont(&FreeSerif18pt7b);
-  tft.setTextColor(BLACK);
-  tft.println("START");
-
-  return;
-}
-
-void main_screen_current_profile(int selected_profile) {
-  tft.setCursor(10, 30);
-  tft.setFont(&FreeSerif18pt7b);
-  tft.setTextColor(GREEN);
-  tft.println(ProfileNames[selected_profile]);
-}
-
-void profile_plot(int x, int y, int w, int h, int selected_profile) {
-  int margin_y = 18; int margin_x = 18; int axis_width = 15;
-  profile_plot_axis(x, y, w, h, margin_x, margin_y, axis_width, selected_profile);
-  profile_plot_curve(x+margin_x+axis_width, y+margin_y, w-margin_x-2*axis_width, h-2*margin_y, selected_profile);
-}
-
-void profile_plot_curve(int x, int y, int w, int h, int selected_profile) {
-  float preheat_duration = Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][PREHEAT_RAMPUP];
-  float soak_duration = Profiles[selected_profile][SOAK_DURATION];
-  float reflow_ramp_duration = (Profiles[selected_profile][REFLOW_START_TEMP]-Profiles[selected_profile][SOAK_END_TEMP])/Profiles[selected_profile][REFLOW_RAMPUP];
-  float reflow_duration = Profiles[selected_profile][REFLOW_DURATION];
-  float cooldown_duration = Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][COOLDOWN];
-  float total_duration = preheat_duration + soak_duration+reflow_ramp_duration+reflow_duration+cooldown_duration;
-
-
-  int x_s = x; int x_e = x_s + (w*(preheat_duration/total_duration));
-  tft.drawLine(x_s, y+h, x_e, y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-
-  x_s = x_e; x_e = x_s + (w*(soak_duration/total_duration));
-  tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h - (h* (Profiles[selected_profile][SOAK_END_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-
-  x_s = x_e; x_e = x_s + (w*(reflow_ramp_duration/total_duration));
-  tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][SOAK_END_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h - (h* (Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-
-  x_s = x_e; x_e = x_s + (w*((reflow_duration/2)/total_duration));
-  tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h - (h* (Profiles[selected_profile][REFLOW_PEAK_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-  x_s = x_e; x_e = x_s + (w*((reflow_duration)/total_duration));
-  tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][REFLOW_PEAK_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h - (h* (Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-
-  x_s = x_e; x_e = x_s + (w*((cooldown_duration)/total_duration));
-  tft.drawLine(x_s, y+(h - (h* (Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))),x_e, y+(h), PINK);
-
-  tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-  tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-  tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-  tft.drawLine(x, y+h, x+(w*(preheat_duration/total_duration)), y+(h - (h* (Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP]))), PINK);
-
-}
-
-void profile_plot_axis(int x, int y, int w, int h, int margin_x, int margin_y, int axis_width, int selected_profile) {
-  // make backgorund of axis
-  tft.fillRect(x, y, w, h, BLACK);
-
-  int dashed_line_len = 5;
-  // === draw important temperatures and dashed lines ===
-  tft.setFont(&FreeSerif9pt7b);
-  tft.setTextColor(PINK);
-
-  // peak temp
-  int peak_temp = y+margin_y;
-  tft.setCursor(x, peak_temp);
-  tft.println((int)Profiles[selected_profile][REFLOW_PEAK_TEMP]);
-  for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, peak_temp, dashed_line_len, GREEN);
-
-  // reflow temp (liquidus)
-  int reflow_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][REFLOW_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
-  tft.setCursor(x, reflow_temp);
-  tft.println((int)Profiles[selected_profile][REFLOW_START_TEMP]);
-  for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, reflow_temp, dashed_line_len, GREEN);
-
-  // soak temp
-  int soak_temp = y+margin_y+((h-2*margin_y)-(Profiles[selected_profile][SOAK_START_TEMP]/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-2*margin_y));
-  tft.setCursor(x, soak_temp);
-  tft.println((int)Profiles[selected_profile][SOAK_START_TEMP]);
-  for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, soak_temp, dashed_line_len, GREEN);
-
-  // zero
-  int zero_temp = y+margin_y+((h-2*margin_y)-(0/Profiles[selected_profile][REFLOW_PEAK_TEMP])*(h-margin_y));
-  tft.setCursor(x, zero_temp);
-  tft.println("   0");
-  for(int i=margin_x+axis_width; i<(w); i+=(dashed_line_len*2)) tft.drawFastHLine(i, zero_temp, dashed_line_len, GREEN);
 }

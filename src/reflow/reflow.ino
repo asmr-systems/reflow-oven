@@ -8,6 +8,7 @@
 #include <Fonts/FreeSerif9pt7b.h>
 
 // see https://circuitdigest.com/microcontroller-projects/arduino-pid-temperature-controller#:~:text=As%20the%20name%20suggests%20a,the%20current%20temperature%20and%20setpoint.
+// TODO use relay style PID (see example in library)
 
 // These are 'flexible' lines that can be changed
 #define TFT_CS 10
@@ -384,9 +385,7 @@ public:
         }
 
         // DEBUGGING
-        // current = 25 + random(0, 200); ]
         current = therm->readCelsius();
-        Serial.println(current);
         last_sample_time = millis();
         return true;
     }
@@ -590,7 +589,7 @@ void setup() {
   delay(50);
 
   // DEBUG
-  Serial.begin(9600);
+  // Serial.begin(9600);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin

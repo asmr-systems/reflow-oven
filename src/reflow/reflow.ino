@@ -1,9 +1,13 @@
 #include <SPI.h>
+#include <PID_v1.h>
+#include "max6675.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
 #include "Adafruit_STMPE610.h"
 #include <Fonts/FreeSerif18pt7b.h>
 #include <Fonts/FreeSerif9pt7b.h>
+
+// see https://circuitdigest.com/microcontroller-projects/arduino-pid-temperature-controller#:~:text=As%20the%20name%20suggests%20a,the%20current%20temperature%20and%20setpoint.
 
 // These are 'flexible' lines that can be changed
 #define TFT_CS 10
@@ -11,10 +15,17 @@
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
 #define STMPE_CS 8
 
+// thermocouple pins
+#define THERM_CIPO 12
+#define THERM_SCK 13
+#define THERM_CS 7 // D7
+
 // Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
+
+MAX6675 thermocouple(THERM_SCK, THERM_CS, THERM_CIPO);
 
 void dashedHLine(int x, int y, int w, int dash_len, int color) {
     for(int i=x; i<(w); i+=(dash_len*2)) {
@@ -189,11 +200,16 @@ enum PHASE_IDX {
     REFLOW,
     COOLOFF,
 };
-char* phase_names[6] = {"standby", "preheat", "soak", "solder preheat", "solder", "cooldown"};
+char* phase_names[7] = {"standby", "preheat", "soak", "preflow", "reflow", "cooloff", "done"};
 
 class Phases {
 public:
     // information about phase duration, start, end temp, etc.
+
+    int txt_color = BLACK;
+    int bg_color = WHITE;
+    int x;
+    int y;
 
     struct phase {
         int start_temp; // in Celcius
@@ -212,7 +228,7 @@ public:
     int total_duration;
     PHASE_IDX current_phase = 0;
 
-    Phases(int profile) {
+    Phases(int x, int y, int profile) : x(x), y(y) {
         calculate_from_profile(profile);
     }
 
@@ -256,6 +272,36 @@ public:
         // total
         total_duration = preheat.duration + soak.duration + reflow_rampup.duration +reflow.duration + cooldown.duration;
     }
+
+    void update(int time_elapsed) {
+        int current = 1;
+        if (time_elapsed < preheat.duration) {
+            current = 1;
+        } else if (time_elapsed < preheat.duration + soak.duration) {
+            current = 2;
+        } else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration) {
+            current = 3;
+        } else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration + reflow.duration) {
+            current = 4;
+        }  else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration + reflow.duration + cooldown.duration) {
+            current = 5;
+        } else if (time_elapsed > total_duration) {
+            current = 6;
+        }
+
+        if (current_phase != current) {
+            current_phase = current;
+            render(current_phase);
+        }
+    }
+
+    void render(int current_phase = 0) {
+        tft.fillRect(x, y, 140, 40, bg_color);
+        tft.setCursor(x + 10, y + 30);
+        tft.setFont(&FreeSerif18pt7b);
+        tft.setTextColor(txt_color);
+        tft.println(phase_names[current_phase]);
+    }
 };
 
 class Clock {
@@ -289,6 +335,10 @@ public:
     }
 
     bool tick() {
+        if (time_remaining == 0) {
+            return false;
+        }
+
         if (millis() - start_time > 1000) {
             start_time = millis();
             time_elapsed++;
@@ -318,7 +368,42 @@ private:
 
 class Temperature {
 public:
+    float current = 0;
+
+    int txt_color = BLACK;
+    int bg_color = WHITE;
+    int x;
+    int y;
     // temperature readings.
+    Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
+
+    bool read() {
+        // according to documentation, give AT LEAST 250ms between reads.
+        if (millis() - last_sample_time < 300) {
+            return false;
+        }
+
+        // DEBUGGING
+        current = 25 + random(0, 200); //therm->readCelcius();
+        last_sample_time = millis();
+        return true;
+    }
+
+    void render() {
+        tft.fillRect(x, y, 120, 40, bg_color);
+        tft.setCursor(x + 10, y + 30);
+        tft.setFont(&FreeSerif18pt7b);
+        tft.setTextColor(txt_color);
+        tft.print((int)current);
+        tft.println(" C");
+    }
+
+    void update() {
+        // TODO PID CONTROLS
+    }
+private:
+    MAX6675* therm;
+    unsigned long last_sample_time = 0;
 };
 
 
@@ -455,7 +540,9 @@ public:
                      colors.thermal_profile);
     }
 
-    void render_temperature_measurement(Temperature temp, Clock clk) {}
+    void render_temperature_measurement(Temperature temp, Clock clk) {
+        tft.fillCircle(scale_time(clk.time_elapsed), scale_temp(temp.current), 2, colors.measurements);
+    }
 private:
     int scale_temp(float temp) {
         float range_percent, range_scale, range_offset;
@@ -487,11 +574,12 @@ private:
     }
 };
 
-Button start_button(10, 405, 140, 40, "START", WHITE);
+Button start_button(10, 430, 160, 40, "START", WHITE);
 Button profile_button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
-Phases phases(selected_profile);
+Phases phases(10, 380, selected_profile);
 Plot plot(0, 40, tft.width(), tft.height()*0.70, &phases);
-Clock clock(&phases, 180, 390);
+Clock clock(&phases, 200, 380);
+Temperature temperature(&thermocouple, 200, 430);
 
 
 void setup() {
@@ -517,7 +605,7 @@ void setup() {
   profile_button.txt_margin.x = 10;
   profile_button.txt_margin.y = 30;
 
-  render_loading_screen();
+  // render_loading_screen();
 
   tft.fillScreen(PINK);
   render_main_screen();
@@ -530,6 +618,7 @@ void loop() {
     case MAIN_NOT_RUNNING:
         start_button.update();
         if (start_button.is_unpressed()) {
+            plot.render();
             start_button.txt = "ABORT";
             state = MAIN_RUNNING;
             clock.start();
@@ -538,20 +627,43 @@ void loop() {
         break;
     case MAIN_RUNNING:
         clock.update();
+        start_button.update();
+        temperature.update(); // TODO this is where PID code should go.
+        phases.update(clock.time_elapsed);
+        if (start_button.is_unpressed()) {
+            plot.render();
+            start_button.txt = "START";
+            state = MAIN_NOT_RUNNING;
+            clock.reset();
+            clock.render();
+            start_button.render();
+            phases.render(0);
+            phases.current_phase = 0;
+        }
+        if (clock.time_remaining == 0) {
+            start_button.txt = "RESTART";
+            state = MAIN_NOT_RUNNING;
+        }
         break;
   }
-}
 
-void handle_main_screen() {
+  if (temperature.read()) {
+      temperature.render();
+      plot.render_temperature_measurement(temperature, clock);
+  }
 
-  return;
 }
 
 void render_main_screen() {
     // int selected_profile = 0;
     main_screen_current_profile(selected_profile);
     plot.render();
+    phases.render();
     clock.render();
+    if (temperature.read()) {
+        temperature.render();
+        plot.render_temperature_measurement(temperature, clock);
+    }
 
     if (state == MAIN_NOT_RUNNING) {
         start_button.render();
@@ -571,58 +683,58 @@ void main_screen_current_profile(int selected_profile) {
 //:::::: LOADING SCREEN
 //::::::::::::::::::::::::::
 
-void render_loading_screen() {
-  tft.fillScreen(WHITE);
+// void render_loading_screen() {
+//   tft.fillScreen(WHITE);
 
-  int rect_x_origin = tft.width()/2 - 60;
-  int rect_y_origin = tft.height()/2 - 30;
-  tft.drawRect(rect_x_origin, rect_y_origin, 30, 30, PINK);
+//   int rect_x_origin = tft.width()/2 - 60;
+//   int rect_y_origin = tft.height()/2 - 30;
+//   tft.drawRect(rect_x_origin, rect_y_origin, 30, 30, PINK);
 
-  int text_x_origin = tft.width()/2 - 25;
-  int text_y_origin = tft.height()/2 - 10;
-  tft.setCursor(text_x_origin, text_y_origin);
-  tft.setFont(&FreeSerif18pt7b);
-  tft.setTextColor(RED);
-  tft.println("ASMR");
+//   int text_x_origin = tft.width()/2 - 25;
+//   int text_y_origin = tft.height()/2 - 10;
+//   tft.setCursor(text_x_origin, text_y_origin);
+//   tft.setFont(&FreeSerif18pt7b);
+//   tft.setTextColor(RED);
+//   tft.println("ASMR");
 
-  delay(100);
-  int colors[5] = {PINK, ORANGE, YELLOW, GREEN, VIOLET};
-  for (int i = 1; i < 40; i++) {
-      tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 + i*20, 30 + i*20, PINK + i*50);
-      if (i < 5) {
-        tft.setCursor(text_x_origin + i*15, text_y_origin+i*15);
-        tft.setTextColor(colors[i]);
-        tft.println("ASMR");
-        delay(100);
-      } else{
-        tft.setCursor(rect_x_origin, rect_y_origin + 200);
-        tft.setTextColor(BLUE);
-        switch (i) {
-          case 5:
-          tft.println("R");
-          break;
-          case 6:
-          tft.println("R E");
-          break;
-          case 7:
-          tft.println("R E F");
-          break;
-          case 8:
-          tft.println("R E F L");
-          break;
-          case 9:
-          tft.println("R E F L O");
-          break;
-          case 10:
-          tft.println("R E F L O W");
-          break;
-          default:
-          tft.println("R E F L O W");
-          break;
-        }
-        delay(50);
-      }
-  }
+//   delay(100);
+//   int colors[5] = {PINK, ORANGE, YELLOW, GREEN, VIOLET};
+//   for (int i = 1; i < 40; i++) {
+//       tft.drawRect(rect_x_origin - i*10, rect_y_origin - i*10, 30 + i*20, 30 + i*20, PINK + i*50);
+//       if (i < 5) {
+//         tft.setCursor(text_x_origin + i*15, text_y_origin+i*15);
+//         tft.setTextColor(colors[i]);
+//         tft.println("ASMR");
+//         delay(100);
+//       } else{
+//         tft.setCursor(rect_x_origin, rect_y_origin + 200);
+//         tft.setTextColor(BLUE);
+//         switch (i) {
+//           case 5:
+//           tft.println("R");
+//           break;
+//           case 6:
+//           tft.println("R E");
+//           break;
+//           case 7:
+//           tft.println("R E F");
+//           break;
+//           case 8:
+//           tft.println("R E F L");
+//           break;
+//           case 9:
+//           tft.println("R E F L O");
+//           break;
+//           case 10:
+//           tft.println("R E F L O W");
+//           break;
+//           default:
+//           tft.println("R E F L O W");
+//           break;
+//         }
+//         delay(50);
+//       }
+//   }
 
-  delay(500);
-}
+//   delay(500);
+// }

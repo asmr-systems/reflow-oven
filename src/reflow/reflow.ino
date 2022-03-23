@@ -642,6 +642,7 @@ void loop() {
         }
         if (clock.time_remaining == 0) {
             start_button.txt = "RESTART";
+            start_button.render();
             state = MAIN_NOT_RUNNING;
         }
         break;

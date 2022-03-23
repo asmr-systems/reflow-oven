@@ -15,10 +15,10 @@
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
 #define STMPE_CS 8
 
-// thermocouple pins
-#define THERM_CIPO 12
-#define THERM_SCK 13
-#define THERM_CS 7 // D7
+// thermocouple pins (these must be different from the SPI pins for some reason)
+#define THERM_CIPO 6
+#define THERM_SCK 5
+#define THERM_CS 7
 
 // Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
@@ -384,7 +384,9 @@ public:
         }
 
         // DEBUGGING
-        current = 25 + random(0, 200); //therm->readCelcius();
+        // current = 25 + random(0, 200); ]
+        current = therm->readCelsius();
+        Serial.println(current);
         last_sample_time = millis();
         return true;
     }

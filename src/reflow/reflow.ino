@@ -11,15 +11,15 @@
 // TODO use relay style PID (see example in library)
 
 // These are 'flexible' lines that can be changed
-#define TFT_CS 10
-#define TFT_DC 9
+#define TFT_CS 1 // 10
+#define TFT_DC 2 // 9
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
-#define STMPE_CS 8
+#define STMPE_CS 3 // 8
 
 // thermocouple pins (these must be different from the SPI pins for some reason)
-#define THERM_CIPO 6
-#define THERM_SCK 5
-#define THERM_CS 7
+#define THERM_CIPO 4 // 6
+#define THERM_SCK 5 // 5
+#define THERM_CS 6 // 7
 
 // Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
@@ -82,7 +82,7 @@ public:
     uint16_t h;                       // height
     String txt;                       // text
     int color;                        // color
-    GFXfont* font;                    // font
+    const GFXfont* font;                    // font
     int alt_color = ORANGE;           // alt color
     int clear_color = WHITE;          // clear color
 
@@ -91,7 +91,7 @@ public:
         int y = 30;
     } txt_margin;    // text margin
 
-    Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color, GFXfont* font = &FreeSerif18pt7b)
+    Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, String txt, int color, const GFXfont* font = &FreeSerif18pt7b)
         : x(x), y(y), w(w), h(h), txt(txt), color(color), font(font)
         {}
 
@@ -194,12 +194,13 @@ private:
 };
 
 enum PHASE_IDX {
-    STANDBY,
-    PREHEAT,
-    SOAK,
-    REFLOW_PREHEAT,
-    REFLOW,
-    COOLOFF,
+    STANDBY        = 0,
+    PREHEAT        = 1,
+    SOAK           = 2,
+    REFLOW_PREHEAT = 3,
+    REFLOW         = 4,
+    COOLOFF        = 5,
+    COMPLETE       = 6,
 };
 char* phase_names[7] = {"standby", "preheat", "soak", "preflow", "reflow", "cooloff", "done"};
 
@@ -227,7 +228,7 @@ public:
     phase cooldown;
 
     int total_duration;
-    PHASE_IDX current_phase = 0;
+    PHASE_IDX current_phase = STANDBY;
 
     Phases(int x, int y, int profile) : x(x), y(y) {
         calculate_from_profile(profile);
@@ -275,25 +276,26 @@ public:
     }
 
     void update(int time_elapsed) {
-        int current = 1;
+        PHASE_IDX current = PREHEAT;
         if (time_elapsed < preheat.duration) {
-            current = 1;
+            current = PREHEAT;
         } else if (time_elapsed < preheat.duration + soak.duration) {
-            current = 2;
+            current = SOAK;
         } else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration) {
-            current = 3;
+            current = REFLOW_PREHEAT;
         } else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration + reflow.duration) {
-            current = 4;
+            current = REFLOW;
         }  else if (time_elapsed < preheat.duration + soak.duration + reflow_rampup.duration + reflow.duration + cooldown.duration) {
-            current = 5;
+            current = COOLOFF;
         } else if (time_elapsed > total_duration) {
-            current = 6;
+            current = COMPLETE;
         }
 
         if (current_phase != current) {
             current_phase = current;
             render(current_phase);
         }
+
     }
 
     void render(int current_phase = 0) {
@@ -639,7 +641,7 @@ void loop() {
             clock.render();
             start_button.render();
             phases.render(0);
-            phases.current_phase = 0;
+            phases.current_phase = STANDBY;
         }
         if (clock.time_remaining == 0) {
             start_button.txt = "RESTART";

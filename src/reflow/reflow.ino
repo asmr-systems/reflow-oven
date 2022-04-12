@@ -1,6 +1,6 @@
 #include <SPI.h>
 #include <PID_v1.h>
-#include "max6675.h"
+#include "MAX6675.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
 #include "Adafruit_STMPE610.h"
@@ -16,17 +16,15 @@
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
 #define STMPE_CS 3 // 8
 
-// thermocouple pins (these must be different from the SPI pins for some reason)
-#define THERM_CIPO 4 // 6
-#define THERM_SCK 5 // 5
-#define THERM_CS 6 // 7
+// thermocouple pins (hardware SPI)
+#define THERM_CS 0 // chip select (0)
 
 // Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 
 Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 
-MAX6675 thermocouple(THERM_SCK, THERM_CS, THERM_CIPO);
+MAX6675 thermocouple;
 
 void dashedHLine(int x, int y, int w, int dash_len, int color) {
     for(int i=x; i<(w); i+=(dash_len*2)) {
@@ -380,6 +378,13 @@ public:
     // temperature readings.
     Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
 
+    void begin() {
+        pinMode(THERM_CS, OUTPUT);
+
+        // begin thermocouple
+        therm->begin(THERM_CS);
+    }
+
     bool read() {
         // according to documentation, give AT LEAST 250ms between reads.
         if (millis() - last_sample_time < 300) {
@@ -387,8 +392,12 @@ public:
         }
 
         // DEBUGGING
-        current = therm->readCelsius();
+        // current = therm->readCelsius();
+        therm->read();
+        current = therm->getTemperature();
+
         last_sample_time = millis();
+
         return true;
     }
 
@@ -601,6 +610,8 @@ void setup() {
   // begin capacitive touch sensor and lcd screen
   touch.begin();
   tft.begin();
+
+  temperature.begin();
 
   tft.setRotation(0);  // make screen hamburger style
 

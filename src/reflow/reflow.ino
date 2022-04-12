@@ -1,6 +1,7 @@
 #include <SPI.h>
 #include <PID_v1.h>
 #include "MAX6675.h"
+#include "AT24Cxx.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_HX8357.h"
 #include "Adafruit_STMPE610.h"
@@ -25,6 +26,10 @@ Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
 Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 
 MAX6675 thermocouple;
+
+// define EEPROM I2C address
+#define EEPROM_IC_ADDR 0x50
+
 
 void dashedHLine(int x, int y, int w, int dash_len, int color) {
     for(int i=x; i<(w); i+=(dash_len*2)) {
@@ -367,6 +372,41 @@ private:
     unsigned long start_time = 0;
 };
 
+// see ReflowWizard.h:261 from controleo code for important learned parameters
+// see: https://www.whizoo.com/intelligent
+// for description of scores and parameter learning.
+enum Param {
+    LearningComplete  = 0,
+    LearnedPower      = 1, // duty cycle of all elements to keep oven at 120C (>20% is not good)
+    LearnedInertia    = 2, // time needed to raise from 120C to 150C at 80% duty cycle
+    LearnedInsulation = 3, // time needed to cool from 150C to 120C
+    OvenScore         = 4,
+};
+
+class ParameterStore {
+public:
+    void init() {
+        // initialize new EEPROM
+        eep = new AT24Cxx(EEPROM_IC_ADDR, 32);  // 32 kB
+    }
+
+    uint8_t read(Param param) {
+        uint8_t value;
+        value = eep->read(param);
+        Serial.print(param);
+        Serial.print("\t");
+        Serial.print(value, DEC);
+        Serial.println();
+    }
+
+    void write(Param param, uint8_t value) {
+        eep->update(param, value);
+    }
+
+private:
+    AT24Cxx* eep;
+};
+
 class Temperature {
 public:
     float current = 0;
@@ -375,6 +415,9 @@ public:
     int bg_color = WHITE;
     int x;
     int y;
+
+    ParameterStore params;
+
     // temperature readings.
     Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
 
@@ -383,6 +426,9 @@ public:
 
         // begin thermocouple
         therm->begin(THERM_CS);
+
+        // initialized parameter store (EEPROM)
+        params.init();
     }
 
     bool read() {
@@ -600,7 +646,7 @@ void setup() {
   delay(50);
 
   // DEBUG
-  // Serial.begin(9600);
+  Serial.begin(9600);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
@@ -623,6 +669,19 @@ void setup() {
 
   tft.fillScreen(WHITE);
   render_main_screen();
+
+  // DEBUG
+  // temperature.params.write(LearningComplete, 255);
+  // temperature.params.write(LearnedPower, 88);
+  // temperature.params.write(LearnedInertia, 99);
+  // temperature.params.write(LearnedInsulation, 100);
+  // temperature.params.write(OvenScore, 90);
+
+  temperature.params.read(LearningComplete);
+  temperature.params.read(LearnedPower);
+  temperature.params.read(LearnedInertia);
+  temperature.params.read(LearnedInsulation);
+  temperature.params.read(OvenScore);
 
 }
 

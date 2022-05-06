@@ -456,8 +456,51 @@ public:
         tft.println(" C");
     }
 
+    void adjust() {
+        // TODO exit if 1 second has not yet elapsed.
+
+        // TODO read current temp
+        // TODO calculate expected temp
+
+        // perform standard pid calculation: y(t) = (Kp*e) + (Ki*int(e(t), dt)) + (Kd*de/dt)
+        // with a 1 second interval
+        error = expectedTemp - actualTemp;
+        integralTerm     = integralTerm + error;
+        derivativeTerm   = error - proportionalTerm;
+        proportionalTerm = error;
+
+        // get base power output based on learned values
+        output = getBaseOutputPower(expectedTemp, );
+
+        // the heating elements in the oven are slow to respond to changes, so the most important term
+        // in the PID equation will be the derivative term. The other terms will be lower.
+        Kp = error < 0 ? 4 : 2;      // double the output proportionally to the error.
+        Ki = 0.01;   // keep low to prevent oscillations.
+        Kd = map(constrain(params.learnedInertia, 30, 100), 30, 100, 30, 75); // TODO base this off of the learned inertia. typically around 35.
+
+        deltaOutput = kp*proportionalTerm + ki*integralTerm + kd*derivativeTerm;
+        output += constrain(deltaOutput, -30, 30);
+        output = constrain(output, 0, 100);
+
+        // set duty cycle for each heating element
+        for (uint8_t i = HEATING_ELEMENT_BOTTOM; i <= HEATING_ELEMENT_TOP; i++)
+        {
+            dutyCycle[i] = output * bias[i] / maxBias;
+        }
+    }
+
+    void controlHeatingElements() {
+        // TODO update heating elements based on duty cycles
+    }
+
     void update() {
-        // TODO PID CONTROLS
+        adjust();  // adjust the power output for heating elements (run every 1 second)
+
+        controlHeatingElements(); // turn power on/off for each heating element
+    }
+
+    uint16_t getBaseOutputPower() {
+
     }
 private:
     MAX6675* therm;
@@ -676,7 +719,6 @@ void setup() {
   // temperature.params.write(LearnedInertia, 99);
   // temperature.params.write(LearnedInsulation, 100);
   // temperature.params.write(OvenScore, 90);
-
   temperature.params.read(LearningComplete);
   temperature.params.read(LearnedPower);
   temperature.params.read(LearnedInertia);

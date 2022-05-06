@@ -470,7 +470,7 @@ public:
         proportionalTerm = error;
 
         // get base power output based on learned values
-        output = getBaseOutputPower(expectedTemp, );
+        output = getBaseOutputPower(expectedTemp, expectedTempDelta, bias, maxBias);
 
         // the heating elements in the oven are slow to respond to changes, so the most important term
         // in the PID equation will be the derivative term. The other terms will be lower.
@@ -499,8 +499,18 @@ public:
         controlHeatingElements(); // turn power on/off for each heating element
     }
 
-    uint16_t getBaseOutputPower() {
+    uint16_t getBaseOutputPower(double temp, double incr, uint16_t *bias, uint16_t maxBias) {
+        temp = constrain(temp, 20, 250);
 
+        // determine power needed to maintain current temperature
+        basePower = temp * 0.83 * params.learnedPower/100;
+        insulationPower = map(params.learnedInsulation, 0, 300, map(temperature, 0, 400, 0, 20), 0);
+        risePower = increment * basePower * 2;
+
+        biasFactor = (float)2 * maxBias/(bias[HEATING_ELEMENT_BOTTOM] + bias[HEATING_ELEMENT_TOP]);
+
+        totalPower = biasFactor * (basePower + insulationPower + risePower);
+        return totalPower < 100 ? totalPower : 100;
     }
 private:
     MAX6675* therm;

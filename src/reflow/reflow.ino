@@ -11,6 +11,18 @@
 // see https://circuitdigest.com/microcontroller-projects/arduino-pid-temperature-controller#:~:text=As%20the%20name%20suggests%20a,the%20current%20temperature%20and%20setpoint.
 // TODO use relay style PID (see example in library)
 
+enum HEATING_ELEMENTS {
+    BOOST  = 0,
+    BOTTOM = 1,
+    TOP    = 2,
+};
+
+uint8_t HEATING_ELEMENT_PINS[3] = {
+    4, // BOOST
+    5, // BOTTOM
+    6, // TOP
+};
+
 // These are 'flexible' lines that can be changed
 #define TFT_CS 1 // 10
 #define TFT_DC 2 // 9

@@ -12,9 +12,9 @@
 // TODO use relay style PID (see example in library)
 
 enum HEATING_ELEMENTS {
-    BOOST  = 0,
-    BOTTOM = 1,
-    TOP    = 2,
+    HEATING_ELEMENT_BOOST  = 0,
+    HEATING_ELEMENT_BOTTOM = 1,
+    HEATING_ELEMENT_TOP    = 2,
 };
 
 uint8_t HEATING_ELEMENT_PINS[3] = {
@@ -397,6 +397,11 @@ enum Param {
 
 class ParameterStore {
 public:
+    // TODO fill in all parameters
+    double learnedInertia    = 0;
+    double learnedPower      = 0;
+    double learnedInsulation = 0;
+
     void init() {
         // initialize new EEPROM
         eep = new AT24Cxx(EEPROM_IC_ADDR, 32);  // 32 kB
@@ -429,6 +434,22 @@ public:
     int y;
 
     ParameterStore params;
+
+    // power bias for each heating element
+    uint16_t bias[3] = {
+        0, // BOOST
+        0, // BOTTOM
+        0, // TOP
+    };
+
+    const uint16_t maxBias = 10;
+
+    // duty cycle for each heating element
+    double dutyCycle[3] = {
+        50, // BOOST
+        50, // BOTTOM
+        50, // TOP
+    };
 
     // temperature readings.
     Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
@@ -469,33 +490,40 @@ public:
     }
 
     void adjust() {
+        static double proportionalTerm = 0;
+
         // TODO exit if 1 second has not yet elapsed.
 
         // TODO read current temp
+        double actualTemp = 0;
         // TODO calculate expected temp
+        double expectedTemp = 0;
+        // TODO calculate expectedTempDelta?
+        double expectedTempDelta = 1;
 
         // perform standard pid calculation: y(t) = (Kp*e) + (Ki*int(e(t), dt)) + (Kd*de/dt)
         // with a 1 second interval
-        error = expectedTemp - actualTemp;
-        integralTerm     = integralTerm + error;
-        derivativeTerm   = error - proportionalTerm;
+        double error = expectedTemp - actualTemp;
+        double integralTerm     = integralTerm + error;
+        double derivativeTerm   = error - proportionalTerm;
         proportionalTerm = error;
 
         // get base power output based on learned values
-        output = getBaseOutputPower(expectedTemp, expectedTempDelta, bias, maxBias);
+        double output = getBaseOutputPower(expectedTemp, expectedTempDelta, bias, maxBias);
 
         // the heating elements in the oven are slow to respond to changes, so the most important term
         // in the PID equation will be the derivative term. The other terms will be lower.
-        Kp = error < 0 ? 4 : 2;      // double the output proportionally to the error.
-        Ki = 0.01;   // keep low to prevent oscillations.
-        Kd = map(constrain(params.learnedInertia, 30, 100), 30, 100, 30, 75); // TODO base this off of the learned inertia. typically around 35.
+        double Kp = error < 0 ? 4 : 2;      // double the output proportionally to the error.
+        double Ki = 0.01;   // keep low to prevent oscillations.
+        double Kd = map(constrain(params.learnedInertia, 30, 100), 30, 100, 30, 75); // TODO base this off of the learned inertia. typically around 35.
 
-        deltaOutput = kp*proportionalTerm + ki*integralTerm + kd*derivativeTerm;
+        // compute PID equation
+        double deltaOutput = Kp*proportionalTerm + Ki*integralTerm + Kd*derivativeTerm;
         output += constrain(deltaOutput, -30, 30);
         output = constrain(output, 0, 100);
 
         // set duty cycle for each heating element
-        for (uint8_t i = HEATING_ELEMENT_BOTTOM; i <= HEATING_ELEMENT_TOP; i++)
+        for (uint8_t i = HEATING_ELEMENT_BOOST; i <= HEATING_ELEMENT_TOP; i++)
         {
             dutyCycle[i] = output * bias[i] / maxBias;
         }
@@ -515,13 +543,13 @@ public:
         temp = constrain(temp, 20, 250);
 
         // determine power needed to maintain current temperature
-        basePower = temp * 0.83 * params.learnedPower/100;
-        insulationPower = map(params.learnedInsulation, 0, 300, map(temperature, 0, 400, 0, 20), 0);
-        risePower = increment * basePower * 2;
+        double basePower = temp * 0.83 * params.learnedPower/100;
+        double insulationPower = map(params.learnedInsulation, 0, 300, map(temp, 0, 400, 0, 20), 0);
+        double risePower = incr * basePower * 2;
 
-        biasFactor = (float)2 * maxBias/(bias[HEATING_ELEMENT_BOTTOM] + bias[HEATING_ELEMENT_TOP]);
+        float biasFactor = (float)2 * maxBias/(bias[HEATING_ELEMENT_BOTTOM] + bias[HEATING_ELEMENT_TOP]);
 
-        totalPower = biasFactor * (basePower + insulationPower + risePower);
+        double totalPower = biasFactor * (basePower + insulationPower + risePower);
         return totalPower < 100 ? totalPower : 100;
     }
 private:

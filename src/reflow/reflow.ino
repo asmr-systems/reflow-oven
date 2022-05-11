@@ -40,8 +40,10 @@ Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 MAX6675 thermocouple;
 
 // define EEPROM I2C address
-#define EEPROM_IC_ADDR 0x50
-
+#define EEPROM_IC_ADDR 0x00
+// NOTE: this is a modified version of the AT24Cxx object which has a
+// begin() method.
+// AT24Cxx eep = AT24Cxx(EEPROM_IC_ADDR, 32);
 
 void dashedHLine(int x, int y, int w, int dash_len, int color) {
     for(int i=x; i<(w); i+=(dash_len*2)) {
@@ -178,11 +180,11 @@ private:
             pressed = false;
         }
 
-        // if (pressed) {
-        //     Serial.println("PRESSED");
-        // } else {
-        //     Serial.println("NOT PRESSED");
-        // }
+        if (pressed) {
+            SerialUSB.println("PRESSED");
+        } else {
+            SerialUSB.println("NOT PRESSED");
+        }
 
         return pressed;
     }
@@ -404,16 +406,20 @@ public:
 
     void init() {
         // initialize new EEPROM
+        // code for SparkFun Samd21 Mini arduino core doesn't support
+        // malloc or heap stuff aparrently. so I needed to modify the
+        // AT24Cxx lib to allow for global instances. See README
         eep = new AT24Cxx(EEPROM_IC_ADDR, 32);  // 32 kB
+        // eep.begin();
     }
 
     uint8_t read(Param param) {
         uint8_t value;
         value = eep->read(param);
-        Serial.print(param);
-        Serial.print("\t");
-        Serial.print(value, DEC);
-        Serial.println();
+        SerialUSB.print(param);
+        SerialUSB.print("\t");
+        SerialUSB.print(value, DEC);
+        SerialUSB.println();
     }
 
     void write(Param param, uint8_t value) {
@@ -456,6 +462,11 @@ public:
 
     void begin() {
         pinMode(THERM_CS, OUTPUT);
+
+        for (uint8_t i = 0; i < 3; i++) {
+            pinMode(HEATING_ELEMENT_PINS[i], OUTPUT);
+            digitalWrite(HEATING_ELEMENT_PINS[i], HIGH);
+        }
 
         // begin thermocouple
         therm->begin(THERM_CS);
@@ -530,7 +541,14 @@ public:
     }
 
     void controlHeatingElements() {
+        // NOTE: Heating Elements turn on (SSRs Active) when
+        // Heating Element Pins go LOW
+
         // TODO update heating elements based on duty cycles
+        for (uint8_t i = 0; i < 3; i++) {
+            pinMode(HEATING_ELEMENT_PINS[i], OUTPUT);
+            digitalWrite(HEATING_ELEMENT_PINS[i], HIGH);
+        }
     }
 
     void update() {
@@ -739,20 +757,30 @@ void setup() {
   delay(50);
 
   // DEBUG
-  Serial.begin(9600);
+  SerialUSB.begin(9600);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
   // it doens't work.
-  pinMode(10, OUTPUT);
+  // pinMode(10, OUTPUT);
+  pinMode(TFT_CS, OUTPUT);
+  pinMode(STMPE_CS, OUTPUT);
+  pinMode(THERM_CS, OUTPUT);
 
   // begin capacitive touch sensor and lcd screen
-  touch.begin();
   tft.begin();
+
+  delay(50);
 
   temperature.begin();
 
   tft.setRotation(0);  // make screen hamburger style
+
+  while (!touch.begin())
+  {
+      delay(500);
+      tft.fillScreen(GREEN); // maybe do something better....?
+  };
 
   // configure gui stuff
   profile_button.txt_margin.x = 10;
@@ -769,12 +797,16 @@ void setup() {
   // temperature.params.write(LearnedInertia, 99);
   // temperature.params.write(LearnedInsulation, 100);
   // temperature.params.write(OvenScore, 90);
-  temperature.params.read(LearningComplete);
-  temperature.params.read(LearnedPower);
-  temperature.params.read(LearnedInertia);
-  temperature.params.read(LearnedInsulation);
-  temperature.params.read(OvenScore);
 
+  // DEBUGGING: for some reason, we can't read from this.
+  temperature.params.read(LearningComplete);
+  // temperature.params.read(LearnedPower);
+  // temperature.params.read(LearnedInertia);
+  // temperature.params.read(LearnedInsulation);
+  // temperature.params.read(OvenScore);
+
+  // DEBUGGING TAKE OUT
+  // temperature.controlHeatingElements();
 }
 
 void loop() {
@@ -818,6 +850,10 @@ void loop() {
       plot.render_temperature_measurement(temperature, clock);
   }
 
+  // if (touch.touched())
+  // {
+  //     SerialUSB.println("TOUCHED");
+  // }
 }
 
 void render_main_screen() {
@@ -844,6 +880,7 @@ void main_screen_current_profile(int selected_profile) {
     tft.setTextColor(GREEN);
     tft.println(ProfileNames[selected_profile]);
 }
+
 
 
 //:::::: LOADING SCREEN

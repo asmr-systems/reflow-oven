@@ -59,6 +59,7 @@ void dashedHLine(int x, int y, int w, int dash_len, int color) {
 #define RED 0xe2ab
 #define BLACK 0x0000
 #define WHITE 0xFFFF
+#define GREY 0xee5b
 
 // indices (eventually store in EEPROM)
 #define PREHEAT_RAMPUP    0  // C/s
@@ -80,12 +81,15 @@ int selected_profile = 0;
 
 // finite state machine
 enum STATES {
+    STARTUP,
+    MENU,
+    LEARNING_DASHBOARD,
   MAIN_NOT_RUNNING,
   MAIN_RUNNING,
   CHOOSE_PROFILE,
   EDIT_PROFILE,
 };
-STATES state = MAIN_NOT_RUNNING;
+STATES state = STARTUP;
 
 class Button {
 public:
@@ -96,7 +100,7 @@ public:
     String txt;                       // text
     int color;                        // color
     const GFXfont* font;                    // font
-    int alt_color = ORANGE;           // alt color
+    int alt_color = YELLOW;           // alt color
     int clear_color = WHITE;          // clear color
 
     struct {
@@ -142,17 +146,6 @@ public:
         return unpressed;
     }
 
-    void disable() { disabled = true; }
-    void enable() { disabled = false; }
-
-private:
-    bool pressed = false;
-    bool unpressed = false;
-    bool disabled = false;            // button is disabled
-
-    unsigned long start_time = 0;
-    unsigned long delay_time = 100;
-
     bool is_pressed() {
         // enforce sampling interval
         if (millis() - start_time > delay_time) {
@@ -169,7 +162,7 @@ private:
 
         uint16_t _x, _y;
         read_touch(_x, _y);
-        if (is_within_bounds(_x, _y)) {
+        if (is_within_bounds((int)_x, (int)_y)) {
             pressed = true;
         } else {
             if (pressed) unpressed = true;
@@ -185,6 +178,20 @@ private:
         return pressed;
     }
 
+    void disable() { disabled = true; }
+    void enable() { disabled = false; }
+
+private:
+    bool pressed = false;
+    bool unpressed = false;
+    bool disabled = false;            // button is disabled
+
+    unsigned long start_time = 0;
+    unsigned long delay_time = 80;
+
+    uint16_t y_offset = 20;
+    uint16_t x_offset = 30;
+
     void read_touch(uint16_t& _x, uint16_t& _y) {
         uint8_t z;
         while (! touch.bufferEmpty()) {
@@ -199,8 +206,8 @@ private:
         return;
     }
 
-    bool is_within_bounds(uint16_t _x, uint16_t _y) {
-        if (_x > x && _x < (x + w) && _y > y && _y < (y+h)) return true;
+    bool is_within_bounds(int _x, int _y) {
+        if (_x > (x - x_offset) && _x < (x + w + x_offset) && _y > (y - y_offset) && _y < (y + y_offset +h)) return true;
         return false;
     }
 
@@ -767,13 +774,136 @@ private:
     }
 };
 
-Button start_button(10, 430, 160, 40, "START", WHITE);
+Button gotoMenuButton(280, 5, 40, 40, "X", GREY);
+Button start_button(10, 430, 160, 40, "START", GREY);
 Button profile_button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
 Phases phases(10, 380, selected_profile);
 Plot plot(0, 40, tft.width(), tft.height()*0.70, &phases);
 Clock clock(&phases, 200, 380);
 Temperature temperature(&thermocouple, 200, 430);
 
+class MainMenu {
+public:
+    Button bakeButton  = Button(150, 50, 160, 40, "Bake!", GREY);
+    Button learnButton = Button(150, 140, 160, 40, "Learn!", GREY);
+
+    void render() {
+        tft.fillScreen(WHITE);
+
+        bakeButton.render();
+        learnButton.render();
+
+        rerender = false;
+    }
+
+    void update() {
+        if (rerender) render();
+
+        draw_stuff();
+
+        bakeButton.update();
+        if (bakeButton.is_unpressed())
+        {
+            state = MAIN_NOT_RUNNING;
+            render_main_screen(); // TODO turn this into a class like this.
+            rerender = true;            return;
+        }
+
+        learnButton.update();
+        if (learnButton.is_unpressed())
+        {
+            state = LEARNING_DASHBOARD;
+            rerender = true;
+            return;
+        }
+    }
+
+    void draw_stuff() {
+        static int x1 = random(bounds.xmin, bounds.xmax);
+        static int y1 = random(bounds.ymin, bounds.ymax);
+        static int xx1 = random(bounds.xmin, bounds.xmax);
+        static int yy1 = random(bounds.ymin, bounds.ymax);
+
+
+        const int dt = 50; // 10ms
+        static int start_time   = 0;
+
+        if (millis() - start_time > dt)
+        {
+            int x2 = x1 + random(-seg_length, seg_length);
+            int y2 = y1 + random(-seg_length, seg_length);
+
+            // draw line
+            if (x2 > bounds.xmin && x2 < bounds.xmax && y2 > bounds.ymin && y2 < bounds.ymax)
+            {
+                tft.drawLine(x1, y1, x2, y2, GREEN);
+            } else {
+                if (x2 < bounds.xmin) { x2 = bounds.xmax - (bounds.xmin - x2); }
+                else if (x2 > bounds.xmax) { x2 = bounds.xmin + (x2 - bounds.xmax); }
+                if (y2 < bounds.ymin) { y2 = bounds.ymax - (bounds.ymin - y2); }
+                else if (y2 > bounds.ymax) { y2 = bounds.ymin + (y2 - bounds.ymax); }
+            }
+
+            x1 = x2; y1 = y2;
+
+            start_time = millis();
+        }
+    }
+private:
+    bool rerender = true;
+
+    struct {
+        int ymin = 210;
+        int ymax = 460;
+        int xmin = 0;
+        int xmax = 320;
+    } bounds;
+
+    int seg_length = 8;
+};
+
+class LearningScreen {
+public:
+    Button relearnButton = Button(2, 400, 310, 40, "Re-Learn Parameters", GREY);
+
+    void render() {
+        tft.fillScreen(WHITE);
+
+        // TODO put learned Params here!
+
+        gotoMenuButton.render();
+        relearnButton.render();
+
+        rerender = false;
+    }
+
+    void update() {
+        if (rerender) render();
+
+        relearnButton.update();
+        if (relearnButton.is_unpressed())
+        {
+            // TODO DO SOMETHING
+            rerender = true;
+            return;
+        }
+
+        gotoMenuButton.update();
+        if (gotoMenuButton.is_unpressed())
+        {
+            state = MENU;
+            rerender = true;
+            return;
+        }
+    }
+private:
+    bool rerender = true;
+};
+
+
+//:::: Screens
+MainMenu menu;
+LearningScreen learningDashboard;
 
 void setup() {
   // allow some time before initializing the display
@@ -784,6 +914,10 @@ void setup() {
   // NOTE: MAKE SURE THIS ISN'T ON WHEN USING EXTERNAL POWER SUPPLY!!!
   // program WILL hang!
   Serial.begin(9600);
+
+  // get a random voltage to randomly seed the RNG
+  // pin 6 is unconnected.
+  randomSeed(analogRead(6));
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
@@ -818,10 +952,6 @@ void setup() {
   profile_button.txt_margin.x = 10;
   profile_button.txt_margin.y = 30;
 
-  render_loading_screen();
-
-  tft.fillScreen(WHITE);
-  render_main_screen();
 
   // DEBUG
   // temperature.params.write(LearningComplete, 255);
@@ -842,16 +972,42 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  switch (state) {
+    switch (state) {
+    case STARTUP:
+        render_loading_screen();
+        // state = MAIN_NOT_RUNNING;
+        // render_main_screen();
+        menu.render();
+        state = MENU;
+        break;
+    case MENU:
+        menu.update();
+        break;
+    case LEARNING_DASHBOARD:
+        learningDashboard.update();
+        break;
     case MAIN_NOT_RUNNING:
+        if (temperature.read()) {
+            temperature.render();
+            plot.render_temperature_measurement(temperature, clock);
+        }
+        gotoMenuButton.update();
+        if (gotoMenuButton.is_pressed()) return;
+        if (gotoMenuButton.is_unpressed())
+        {
+            menu.render();
+            state = MENU;
+            return;
+        }
         start_button.update();
+        if (start_button.is_pressed()) return;
         if (start_button.is_unpressed()) {
             plot.render();
             start_button.txt = "ABORT";
             state = MAIN_RUNNING;
             clock.start();
             start_button.render();
+            return;
         }
         break;
     case MAIN_RUNNING:
@@ -859,6 +1015,10 @@ void loop() {
         start_button.update();
         temperature.update(); // TODO this is where PID code should go.
         phases.update(clock.time_elapsed);
+        if (temperature.read()) {
+            temperature.render();
+            plot.render_temperature_measurement(temperature, clock);
+        }
         if (start_button.is_unpressed()) {
             plot.render();
             start_button.txt = "START";
@@ -879,20 +1039,14 @@ void loop() {
         break;
   }
 
-  if (temperature.read()) {
-      temperature.render();
-      plot.render_temperature_measurement(temperature, clock);
-  }
-
-  // if (touch.touched())
-  // {
-  //     SerialUSB.println("TOUCHED");
-  // }
 }
 
 void render_main_screen() {
+    tft.fillScreen(WHITE);
+
     // int selected_profile = 0;
     main_screen_current_profile(selected_profile);
+    gotoMenuButton.render();
     plot.render();
     phases.render();
     clock.render();

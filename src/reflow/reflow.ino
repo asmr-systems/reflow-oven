@@ -17,15 +17,11 @@ enum HEATING_ELEMENTS {
     HEATING_ELEMENT_TOP    = 2,
 };
 
-uint8_t HEATING_ELEMENT_PINS[3] = {
-    4, // BOOST
-    5, // BOTTOM
-    6, // TOP
-};
+uint8_t HEATING_ELEMENT_CS = 7;
 
 // These are 'flexible' lines that can be changed
-#define TFT_CS 1 // 10
-#define TFT_DC 2 // 9
+#define TFT_CS 2 // 10
+#define TFT_DC 1 // 9
 #define TFT_RST -1 // RST can be set to -1 if you tie it to Arduino's reset
 #define STMPE_CS 3 // 8
 
@@ -40,7 +36,7 @@ Adafruit_STMPE610 touch = Adafruit_STMPE610(STMPE_CS);
 MAX6675 thermocouple;
 
 // define EEPROM I2C address
-#define EEPROM_IC_ADDR 0x00
+#define EEPROM_IC_ADDR 0x50
 // NOTE: this is a modified version of the AT24Cxx object which has a
 // begin() method.
 // AT24Cxx eep = AT24Cxx(EEPROM_IC_ADDR, 32);
@@ -181,9 +177,9 @@ private:
         }
 
         if (pressed) {
-            SerialUSB.println("PRESSED");
+            Serial.println("PRESSED");
         } else {
-            SerialUSB.println("NOT PRESSED");
+            Serial.println("NOT PRESSED");
         }
 
         return pressed;
@@ -416,10 +412,10 @@ public:
     uint8_t read(Param param) {
         uint8_t value;
         value = eep->read(param);
-        SerialUSB.print(param);
-        SerialUSB.print("\t");
-        SerialUSB.print(value, DEC);
-        SerialUSB.println();
+        Serial.print(param);
+        Serial.print("\t");
+        Serial.print(value, DEC);
+        Serial.println();
     }
 
     void write(Param param, uint8_t value) {
@@ -462,11 +458,13 @@ public:
 
     void begin() {
         pinMode(THERM_CS, OUTPUT);
+        pinMode(HEATING_ELEMENT_CS, OUTPUT);
 
-        for (uint8_t i = 0; i < 3; i++) {
-            pinMode(HEATING_ELEMENT_PINS[i], OUTPUT);
-            digitalWrite(HEATING_ELEMENT_PINS[i], HIGH);
-        }
+        SPI.begin();
+
+        digitalWrite(HEATING_ELEMENT_CS, LOW);
+        SPI.transfer(0x07);
+        digitalWrite(HEATING_ELEMENT_CS, HIGH);
 
         // begin thermocouple
         therm->begin(THERM_CS);
@@ -545,10 +543,11 @@ public:
         // Heating Element Pins go LOW
 
         // TODO update heating elements based on duty cycles
-        for (uint8_t i = 0; i < 3; i++) {
-            pinMode(HEATING_ELEMENT_PINS[i], OUTPUT);
-            digitalWrite(HEATING_ELEMENT_PINS[i], HIGH);
-        }
+        uint8_t bits = 0x07;
+
+        digitalWrite(HEATING_ELEMENT_CS, LOW);
+        SPI.transfer(bits);
+        digitalWrite(HEATING_ELEMENT_CS, HIGH);
     }
 
     void update() {
@@ -757,7 +756,7 @@ void setup() {
   delay(50);
 
   // DEBUG
-  SerialUSB.begin(9600);
+  Serial.begin(9600); while(!Serial);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
@@ -767,20 +766,22 @@ void setup() {
   pinMode(STMPE_CS, OUTPUT);
   pinMode(THERM_CS, OUTPUT);
 
-  // begin capacitive touch sensor and lcd screen
-  tft.begin();
-
   delay(50);
+
+  // begin capacitive touch sensor and lcd screen
+  // touch.begin();
+  tft.begin();
+  // while (!touch.begin())
+  // {
+  //     delay(50);
+  //     tft.fillScreen(GREEN); // maybe do something better....?
+  // };
+
 
   temperature.begin();
 
   tft.setRotation(0);  // make screen hamburger style
 
-  while (!touch.begin())
-  {
-      delay(500);
-      tft.fillScreen(GREEN); // maybe do something better....?
-  };
 
   // configure gui stuff
   profile_button.txt_margin.x = 10;
@@ -799,7 +800,7 @@ void setup() {
   // temperature.params.write(OvenScore, 90);
 
   // DEBUGGING: for some reason, we can't read from this.
-  temperature.params.read(LearningComplete);
+  // temperature.params.read(LearningComplete);
   // temperature.params.read(LearnedPower);
   // temperature.params.read(LearnedInertia);
   // temperature.params.read(LearnedInsulation);

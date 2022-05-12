@@ -11,3 +11,4 @@ wasn't being initialized properly. This might have to do with some timing stuff 
 Adding a loop until it returns `true` fixed the problem.
 ## EEPROM Not Working: I2C Code Hangs on `Wire.endTransmission()`
 This might be a connection issue. If the wiring is bad, it will just hang apparently.
+I have a feeling that this might be a software issue.

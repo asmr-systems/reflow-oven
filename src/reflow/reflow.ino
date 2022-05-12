@@ -176,11 +176,11 @@ private:
             pressed = false;
         }
 
-        if (pressed) {
-            Serial.println("PRESSED");
-        } else {
-            Serial.println("NOT PRESSED");
-        }
+        // if (pressed) {
+        //     Serial.println("PRESSED");
+        // } else {
+        //     Serial.println("NOT PRESSED");
+        // }
 
         return pressed;
     }
@@ -756,7 +756,9 @@ void setup() {
   delay(50);
 
   // DEBUG
-  Serial.begin(9600); while(!Serial);
+  // NOTE: MAKE SURE THIS ISN'T ON WHEN USING EXTERNAL POWER SUPPLY!!!
+  // program WILL hang!
+  Serial.begin(9600);
 
   // I don't know why this needs to be pin 10.
   // if it is gone, it doesn't work. or if it is another pin
@@ -765,17 +767,21 @@ void setup() {
   pinMode(TFT_CS, OUTPUT);
   pinMode(STMPE_CS, OUTPUT);
   pinMode(THERM_CS, OUTPUT);
+  pinMode(HEATING_ELEMENT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
+  digitalWrite(STMPE_CS, HIGH);
+  digitalWrite(THERM_CS, HIGH);
+  digitalWrite(HEATING_ELEMENT_CS, HIGH);
 
   delay(50);
 
   // begin capacitive touch sensor and lcd screen
-  // touch.begin();
   tft.begin();
-  // while (!touch.begin())
-  // {
-  //     delay(50);
-  //     tft.fillScreen(GREEN); // maybe do something better....?
-  // };
+  while (!touch.begin())
+  {
+      delay(50);
+      tft.fillScreen(RED); // maybe do something better....?
+  };
 
 
   temperature.begin();
@@ -800,11 +806,11 @@ void setup() {
   // temperature.params.write(OvenScore, 90);
 
   // DEBUGGING: for some reason, we can't read from this.
-  // temperature.params.read(LearningComplete);
-  // temperature.params.read(LearnedPower);
-  // temperature.params.read(LearnedInertia);
-  // temperature.params.read(LearnedInsulation);
-  // temperature.params.read(OvenScore);
+  temperature.params.read(LearningComplete);
+  temperature.params.read(LearnedPower);
+  temperature.params.read(LearnedInertia);
+  temperature.params.read(LearnedInsulation);
+  temperature.params.read(OvenScore);
 
   // DEBUGGING TAKE OUT
   // temperature.controlHeatingElements();

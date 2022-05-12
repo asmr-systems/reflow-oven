@@ -462,9 +462,8 @@ public:
 
         SPI.begin();
 
-        digitalWrite(HEATING_ELEMENT_CS, LOW);
-        SPI.transfer(0x07);
-        digitalWrite(HEATING_ELEMENT_CS, HIGH);
+        // turn off all heaters.
+        off();
 
         // begin thermocouple
         therm->begin(THERM_CS);
@@ -543,17 +542,25 @@ public:
         // Heating Element Pins go LOW
 
         // TODO update heating elements based on duty cycles
-        uint8_t bits = 0x07;
+        //uint8_t bits = 0x07;
 
-        digitalWrite(HEATING_ELEMENT_CS, LOW);
-        SPI.transfer(bits);
-        digitalWrite(HEATING_ELEMENT_CS, HIGH);
+        // debugging
+        // setHeatingElements(true, true, true);
+        setHeatingElements(true, true, true);
     }
 
     void update() {
-        adjust();  // adjust the power output for heating elements (run every 1 second)
+        const int dt = 1000; // 1s
+        static int start_time   = 0;
 
-        controlHeatingElements(); // turn power on/off for each heating element
+        if (millis() - start_time > dt)
+        {
+            start_time = millis();
+
+            //adjust();  // adjust the power output for heating elements (run every 1 second)
+
+            controlHeatingElements(); // turn power on/off for each heating element
+        }
     }
 
     uint16_t getBaseOutputPower(double temp, double incr, uint16_t *bias, uint16_t maxBias) {
@@ -569,9 +576,27 @@ public:
         double totalPower = biasFactor * (basePower + insulationPower + risePower);
         return totalPower < 100 ? totalPower : 100;
     }
+
+    void setHeatingElements(bool boost, bool bottom, bool top) {
+        // 0x03 is just top, 0x05 just bottom, 0x06 is just boost
+        // It should work with all three on at the same time!
+        uint8_t bits = 0x00;
+        bits |= (boost  ? 0 : 1);
+        bits |= (bottom ? 0 : 1) << 1;
+        bits |= (top    ? 0 : 1) << 2;
+
+        digitalWrite(HEATING_ELEMENT_CS, LOW);
+        SPI.transfer(bits);
+        digitalWrite(HEATING_ELEMENT_CS, HIGH);
+    }
+
+    void off() {
+        setHeatingElements(false, false, false);
+    }
 private:
     MAX6675* therm;
     unsigned long last_sample_time = 0;
+
 };
 
 
@@ -843,11 +868,13 @@ void loop() {
             start_button.render();
             phases.render(0);
             phases.current_phase = STANDBY;
+            temperature.off();
         }
         if (clock.time_remaining == 0) {
             start_button.txt = "RESTART";
             start_button.render();
             state = MAIN_NOT_RUNNING;
+            temperature.off();
         }
         break;
   }

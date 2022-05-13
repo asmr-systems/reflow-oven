@@ -400,35 +400,84 @@ enum Param {
     OvenScore         = 4,
 };
 
+enum ParamRating {
+    GOOD_RATING  = 0,
+    OKAY_RATING  = 1,
+    BAD_RATING   = 2,
+};
+
 class ParameterStore {
 public:
     // TODO fill in all parameters
-    double learnedInertia    = 0;
-    double learnedPower      = 0;
-    double learnedInsulation = 0;
+    bool  learningComplete  = false;
+    float learnedPower      = 0;
+    float learnedInertia    = 0;
+    float learnedInsulation = 0;
+    float ovenScore         = 0;
+
+    String name[5] = {
+        "Is Complete",
+        "Power",
+        "Inertia",
+        "Insulation",
+        "Overall Score",
+    };
+
+    float index[5];
 
     void init() {
         // initialize new EEPROM
-        // code for SparkFun Samd21 Mini arduino core doesn't support
-        // malloc or heap stuff aparrently. so I needed to modify the
-        // AT24Cxx lib to allow for global instances. See README
         eep = new AT24Cxx(EEPROM_IC_ADDR, 32);  // 32 kB
-        // eep.begin();
+
+        // populate parameters initially
+        learningComplete  = (bool)(read(LearningComplete));
+        learnedPower      = (float)(read(LearnedPower));
+        learnedInertia    = (float)(read(LearnedInertia));
+        learnedInsulation = (float)(read(LearnedInsulation));
+        ovenScore         = (float)(read(OvenScore));
+
+        // populate index
+        index[LearningComplete] = 0; // dummy
+        index[LearnedPower] = learnedPower;
+        index[LearnedInertia] = learnedInertia;
+        index[LearnedInsulation] = learnedInsulation;
+        index[OvenScore] = ovenScore;
     }
 
     uint8_t read(Param param) {
-        uint8_t value;
-        value = eep->read(param);
-        Serial.print(param);
-        Serial.print("\t");
-        Serial.print(value, DEC);
-        Serial.println();
+        return eep->read(param);
     }
 
     void write(Param param, uint8_t value) {
         eep->update(param, value);
     }
 
+    ParamRating rate(Param param) {
+        float okay_threshold, good_threshold;
+
+        switch (param) {
+        case LearnedPower:
+            good_threshold = 95;
+            okay_threshold = 89;
+            break;
+        case LearnedInertia:
+            good_threshold = 90;
+            okay_threshold = 60;
+            break;
+        case LearnedInsulation:
+            good_threshold = 90;
+            okay_threshold = 60;
+            break;
+        case OvenScore:
+            good_threshold = 90;
+            okay_threshold = 60;
+            break;
+        }
+
+        if (index[param] > good_threshold) return GOOD_RATING;
+        if (index[param] > okay_threshold) return OKAY_RATING;
+        return BAD_RATING;
+    }
 private:
     AT24Cxx* eep;
 };
@@ -870,11 +919,46 @@ public:
         tft.fillScreen(WHITE);
 
         // TODO put learned Params here!
+        tft.setFont(&FreeSerif18pt7b);
+
+        tft.setCursor(20, 40);
+        tft.setTextColor(BLACK);
+        printRatedParam(LearnedPower);
+
+        tft.setCursor(20, 100);
+        tft.setTextColor(BLACK);
+        printRatedParam(LearnedInertia);
+
+        tft.setCursor(20, 160);
+        tft.setTextColor(BLACK);
+        printRatedParam(LearnedInsulation);
+
+        tft.setCursor(20, 220);
+        tft.setTextColor(BLACK);
+        printRatedParam(OvenScore);
 
         gotoMenuButton.render();
         relearnButton.render();
 
         rerender = false;
+    }
+
+    void printRatedParam(Param param) {
+        tft.print(temperature.params.name[param]);
+        tft.print(": ");
+        ParamRating rating = temperature.params.rate(param);
+        switch (rating) {
+        case GOOD_RATING:
+            tft.setTextColor(0x0d0c); // green
+            break;
+        case OKAY_RATING:
+            tft.setTextColor(0xedc7); // gold
+            break;
+        case BAD_RATING:
+            tft.setTextColor(0xe883); // red
+            break;
+        }
+        tft.print(temperature.params.index[param]);
     }
 
     void update() {

@@ -71,19 +71,32 @@ void dashedHLine(int x, int y, int w, int dash_len, int color) {
 #define REFLOW_PEAK_TEMP  6  // C
 #define REFLOW_DURATION   7  // s
 #define COOLDOWN          8  // C/s
-float Profiles[3][9] = {
+float Profiles[4][9] = {
   {1.4, 150, 175, 90, 0.84, 217, 250, 120, 4.4},
   {1, 100, 110, 40, 5, 138, 150, 20, 5},
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
+  {
+      1,
+      120,
+      120,
+      2400,
+      4,
+      120,
+      150,
+      360,
+      360,
+  },
 };
 char *ProfileNames[3] = {"SAC305", "Sn/Bi57.6/Ag0.4", "bletch"};
 int selected_profile = 0;
+int learning_profile = 3;
 
 // finite state machine
 enum STATES {
     STARTUP,
     MENU,
     LEARNING_DASHBOARD,
+    LEARNING_CYCLE,
   MAIN_NOT_RUNNING,
   MAIN_RUNNING,
   CHOOSE_PROFILE,
@@ -329,6 +342,7 @@ public:
 
 class Clock {
 public:
+    int total_duration;
     // count down clock
     int time_elapsed = 0;
     int time_remaining = 0;
@@ -337,7 +351,7 @@ public:
     int bg_color = WHITE;
     int x;
     int y;
-    Clock(Phases* phases, int x, int y) : phases(phases), x(x), y(y) {
+    Clock(int total_duration, int x, int y) : total_duration(total_duration), x(x), y(y) {
         reset();
     }
 
@@ -348,7 +362,7 @@ public:
 
     void reset() {
         time_elapsed = 0;
-        time_remaining = phases->total_duration;
+        time_remaining = total_duration;
     }
 
     void update() {
@@ -374,7 +388,7 @@ public:
     }
 
     void render() {
-        tft.fillRect(x, y, 80, 40, bg_color);
+        tft.fillRect(x, y, 90, 40, bg_color);
         tft.setCursor(x + 10, y + 30);
         tft.setFont(&FreeSerif18pt7b);
         tft.setTextColor(txt_color);
@@ -385,18 +399,44 @@ public:
     }
 
 private:
-    Phases* phases;
     unsigned long start_time = 0;
 };
 
 // see ReflowWizard.h:261 from controleo code for important learned parameters
 // see: https://www.whizoo.com/intelligent
 // for description of scores and parameter learning.
+// NOTE: looking at the latest Controleo code, it doesn't look like the parameters
+// for the individual elements (power and inertia) are important or used for anything.
+// mainly, we might just have to have a bias for each heating element (its minumum and max
+// duty cycle)
 enum Param {
+    // Has the learning cycle fully completed?
     LearningComplete  = 0,
-    LearnedPower      = 1, // duty cycle of all elements to keep oven at 120C (>20% is not good)
-    LearnedInertia    = 2, // time needed to raise from 120C to 150C at 80% duty cycle
-    LearnedInsulation = 3, // time needed to cool from 150C to 120C
+
+    // Percentage of time all elements (combination) stay on to maintain
+    // a constant temperature of 120C.
+    // =< 12% Good
+    // 12% < && < 30% OKAY
+    // => 30% BAD
+    LearnedPower      = 1,
+
+    // Time needed to increase temperature by 30C at 80% duty cycle (high duty cycle)
+    // =< 36 seconds Good
+    // 36 < && < 60 seconds OKAY
+    // 60 =< BAD
+    LearnedInertia    = 2,
+
+    // Time (in seconds) it takes to cool from 150C to 120C (all elements off)
+    // >= 130 seconds GOOD
+    // < 130 && > 80 OKAY
+    // <= 80 seconds BAD
+    LearnedInsulation = 3,
+
+    // Overall score for oven
+    // weighting is:
+    // 40% Power
+    // 40% Inertia
+    // 20% Insulation
     OvenScore         = 4,
 };
 
@@ -421,6 +461,14 @@ public:
         "Inertia",
         "Insulation",
         "Overall Score",
+    };
+
+    String units[5] = {
+        "-",
+        "%",
+        "s",
+        "s",
+        "%",
     };
 
     float index[5];
@@ -668,7 +716,7 @@ public:
     } axes;
 
     struct {
-        int bg               = WHITE;
+        int bg               = YELLOW; //WHITE;
         int axes             = BLACK;
         int thermal_profile  = BLUE;
         int measurements     = PINK;
@@ -690,12 +738,25 @@ public:
         } time; // must sum to 1
     } scaling;
 
+    bool noPhases = false;
+
     Plot(int x, int y, int w, int h, Phases* phases)
         : x(x), y(y), w(w), h(h), phases(phases) {}
 
+    Plot(int x, int y, int w, int h, Phases* phases, bool noPhases)
+        : x(x), y(y), w(w), h(h), phases(phases), noPhases(noPhases) {}
+
+
     void render() {
         render_axes();
-        render_thermal_profile();
+        if (!noPhases)
+            render_thermal_profile();
+    }
+
+    void renderLineAt(int temp, int color = BLUE) {
+        int dash_len = 5;
+        int scaled_temp = scale_temp(temp);
+        dashedHLine(axes.margin_x+axes.width, scaled_temp, w - axes.width, dash_len, color);
     }
 
     void render_axes() {
@@ -828,7 +889,7 @@ Button start_button(10, 430, 160, 40, "START", GREY);
 Button profile_button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHITE, &FreeSerif18pt7b);
 Phases phases(10, 380, selected_profile);
 Plot plot(0, 40, tft.width(), tft.height()*0.70, &phases);
-Clock clock(&phases, 200, 380);
+Clock clock(phases.total_duration, 200, 380);
 Temperature temperature(&thermocouple, 200, 430);
 
 class MainMenu {
@@ -911,7 +972,7 @@ private:
     int seg_length = 8;
 };
 
-class LearningScreen {
+class ParamScreen {
 public:
     Button relearnButton = Button(2, 400, 310, 40, "Re-Learn Parameters", GREY);
 
@@ -919,22 +980,16 @@ public:
         tft.fillScreen(WHITE);
 
         // TODO put learned Params here!
-        tft.setFont(&FreeSerif18pt7b);
-
         tft.setCursor(20, 40);
-        tft.setTextColor(BLACK);
         printRatedParam(LearnedPower);
 
         tft.setCursor(20, 100);
-        tft.setTextColor(BLACK);
         printRatedParam(LearnedInertia);
 
         tft.setCursor(20, 160);
-        tft.setTextColor(BLACK);
         printRatedParam(LearnedInsulation);
 
         tft.setCursor(20, 220);
-        tft.setTextColor(BLACK);
         printRatedParam(OvenScore);
 
         gotoMenuButton.render();
@@ -944,6 +999,9 @@ public:
     }
 
     void printRatedParam(Param param) {
+        tft.setTextColor(BLACK);
+        tft.setFont(&FreeSerif18pt7b);
+
         tft.print(temperature.params.name[param]);
         tft.print(": ");
         ParamRating rating = temperature.params.rate(param);
@@ -958,7 +1016,8 @@ public:
             tft.setTextColor(0xe883); // red
             break;
         }
-        tft.print(temperature.params.index[param]);
+        tft.print((int)temperature.params.index[param]);
+        tft.print(temperature.params.units[param]);
     }
 
     void update() {
@@ -967,8 +1026,8 @@ public:
         relearnButton.update();
         if (relearnButton.is_unpressed())
         {
-            // TODO DO SOMETHING
             rerender = true;
+            state = LEARNING_CYCLE;
             return;
         }
 
@@ -984,10 +1043,157 @@ private:
     bool rerender = true;
 };
 
+enum LearningStage {
+    NOTICE_STAGE    = 0,
+    MAYBE_ABORT     = 1,
+    POWER_STAGE     = 2,
+};
+
+LearningStage learningStage = NOTICE_STAGE;
+
+// learning cycle time in seconds
+const int learning_time = 3600; // 1 hour
+Clock learning_clock = Clock(learning_time, 0, 0);
+Phases learningPhases(10, 380, learning_profile);
+
+class LearningScreen {
+public:
+    class Notice {
+    public:
+        Button continueButton = Button(100, 300, 140, 40, "continue", GREEN);
+
+        void render() {
+            tft.fillScreen(WHITE);
+            gotoMenuButton.render();
+
+            tft.setCursor(0, 200);
+            tft.setTextColor(BLACK);
+            tft.print("Learning will take ~1 hour");
+
+            continueButton.render();
+
+            rerender = false;
+        }
+        void update() {
+            if (rerender) render();
+
+            continueButton.update();
+            if (continueButton.is_unpressed())
+            {
+                learningStage = POWER_STAGE;
+                rerender = true;
+            }
+
+            gotoMenuButton.update();
+            if (gotoMenuButton.is_unpressed())
+            {
+                state = MENU;
+                rerender = true;
+            }
+        }
+    private:
+        bool rerender = true;
+    };
+    Notice notice;
+
+    class PowerStage {
+    public:
+        Plot plot = Plot(0, 200, tft.width(), 250, &learningPhases, true);
+        Temperature temperature = Temperature(&thermocouple, 0, 160);
+
+        void render() {
+            tft.fillScreen(WHITE);
+
+            gotoMenuButton.render();
+
+            // print remaining global time
+            learning_clock.render();
+
+            tft.setCursor(0, 80);
+            tft.setTextColor(BLACK);
+            tft.print("Learning Power");
+
+            tft.setCursor(0, 120);
+            tft.setTextColor(BLACK);
+            tft.setFont(&FreeSerif9pt7b);
+            tft.print("maintaining 120C");
+
+            // TODO print current duty cycle (color coded for rating);
+
+            // plot
+            plot.render();
+            plot.renderLineAt(120);
+
+            // TODO print temperature
+
+
+            rerender = false;
+        }
+
+        void update() {
+            if (rerender) render();
+
+            learning_clock.update();
+            // TODO plot temperature points
+            if (temperature.read()) {
+                temperature.render();
+                plot.render_temperature_measurement(temperature, learning_clock);
+            }
+
+
+            gotoMenuButton.update();
+            if (gotoMenuButton.is_unpressed())
+            {
+                // really abort?
+
+                rerender = true;
+            }
+
+            // TODO select which phase we will be in
+        }
+
+    private:
+        bool rerender = true;
+    };
+    PowerStage powerStage;
+
+    void render() {
+        tft.fillScreen(WHITE);
+        gotoMenuButton.render();
+
+        switch (learningStage) {
+        case NOTICE_STAGE:
+            notice.render();
+            break;
+        case POWER_STAGE:
+            powerStage.render();
+            break;
+        }
+
+        rerender = false;
+    }
+
+    void update() {
+        if (rerender) render();
+
+        switch (learningStage) {
+        case NOTICE_STAGE:
+            notice.update();
+            break;
+        case POWER_STAGE:
+            powerStage.update();
+            break;
+        }
+    }
+
+private:
+    bool rerender = true;
+};
 
 //:::: Screens
 MainMenu menu;
-LearningScreen learningDashboard;
+ParamScreen learningDashboard;
+LearningScreen learningPhaseScreen;
 
 void setup() {
   // allow some time before initializing the display
@@ -1069,6 +1275,9 @@ void loop() {
         break;
     case LEARNING_DASHBOARD:
         learningDashboard.update();
+        break;
+    case LEARNING_CYCLE:
+        learningPhaseScreen.update();
         break;
     case MAIN_NOT_RUNNING:
         if (temperature.read()) {

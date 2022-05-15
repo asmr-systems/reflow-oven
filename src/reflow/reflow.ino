@@ -60,6 +60,9 @@ void dashedHLine(int x, int y, int w, int dash_len, int color) {
 #define BLACK 0x0000
 #define WHITE 0xFFFF
 #define GREY 0xee5b
+#define GOOD_RATING_COLOR 0x0d0c
+#define OKAY_RATING_COLOR 0xedc7
+#define BAD_RATING_COLOR 0xe883
 
 // indices (eventually store in EEPROM)
 #define PREHEAT_RAMPUP    0  // C/s
@@ -501,29 +504,39 @@ public:
     }
 
     ParamRating rate(Param param) {
+        return rate(param, index[param]);
+    };
+
+    ParamRating rate(Param param, float value) {
         float okay_threshold, good_threshold;
 
         switch (param) {
         case LearnedPower:
-            good_threshold = 95;
-            okay_threshold = 89;
+            good_threshold = 12;
+            okay_threshold = 35;
+            if (value <= good_threshold) return GOOD_RATING;
+            if (value < okay_threshold) return OKAY_RATING;
             break;
         case LearnedInertia:
             good_threshold = 90;
             okay_threshold = 60;
+            if (value > good_threshold) return GOOD_RATING;
+            if (value > okay_threshold) return OKAY_RATING;
             break;
         case LearnedInsulation:
             good_threshold = 90;
             okay_threshold = 60;
+            if (value > good_threshold) return GOOD_RATING;
+            if (value > okay_threshold) return OKAY_RATING;
             break;
         case OvenScore:
             good_threshold = 90;
             okay_threshold = 60;
+            if (value > good_threshold) return GOOD_RATING;
+            if (value > okay_threshold) return OKAY_RATING;
             break;
         }
 
-        if (index[param] > good_threshold) return GOOD_RATING;
-        if (index[param] > okay_threshold) return OKAY_RATING;
         return BAD_RATING;
     }
 private:
@@ -556,6 +569,8 @@ public:
         50, // BOTTOM
         50, // TOP
     };
+
+    float powerPeriod = 1000; // 1000 ms
 
     // temperature readings.
     Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
@@ -644,13 +659,30 @@ public:
     void controlHeatingElements() {
         // NOTE: Heating Elements turn on (SSRs Active) when
         // Heating Element Pins go LOW
+        static int lastCycleStartTime = 0;
 
-        // TODO update heating elements based on duty cycles
-        //uint8_t bits = 0x07;
+        if ((millis() - lastCycleStartTime) > powerPeriod) {
+            lastCycleStartTime = millis();
+            // turn on all elements
+            setHeatingElements(false, false, false);
+            return;
+        }
 
-        // debugging
-        // setHeatingElements(true, true, true);
-        setHeatingElements(true, true, true);
+        bool off[3] = {false, false, false};
+
+        for (int i = 0; i < 3; i++) {
+            if ((millis()-lastCycleStartTime) > (dutyCycle[i]*powerPeriod)) {
+                off[i] = true;
+            }
+        }
+
+        setHeatingElements(off[0], off[1], off[2]);
+    }
+
+    void setDutyCycles(float boost, float bottom, float top) {
+        dutyCycle[0] = boost;
+        dutyCycle[1] = bottom;
+        dutyCycle[2] = top;
     }
 
     void update() {
@@ -1118,14 +1150,13 @@ public:
             tft.setFont(&FreeSerif9pt7b);
             tft.print("maintaining 120C");
 
-            // TODO print current duty cycle (color coded for rating);
+            // print current duty cycle (color coded for rating);
+            updateRelearnedPower();
+            drawPowerUsage();
 
             // plot
             plot.render();
             plot.renderLineAt(120);
-
-            // TODO print temperature
-
 
             rerender = false;
         }
@@ -1134,12 +1165,19 @@ public:
             if (rerender) render();
 
             learning_clock.update();
-            // TODO plot temperature points
+            // plot temperature points
             if (temperature.read()) {
                 temperature.render();
                 plot.render_temperature_measurement(temperature, learning_clock);
             }
 
+            updateRelearnedPower();
+
+            drawPowerUsage();
+
+            // control heating elements
+            temperature.setDutyCycles(relearnedPower, relearnedPower, relearnedPower);
+            temperature.controlHeatingElements();
 
             gotoMenuButton.update();
             if (gotoMenuButton.is_unpressed())
@@ -1152,8 +1190,106 @@ public:
             // TODO select which phase we will be in
         }
 
+        void updateRelearnedPower() {
+            static int lastTimeOverTemp = 0;
+            static bool isHeatingUp = true;
+            static int powerIntegral = 0;
+            if (reset)
+            {
+                // start from what exists, but constrain (12 = amazing, 35 = terrible)
+                relearnedPower = constrain(temperature.params.learnedPower, 0, 100);
+                reset = false;
+
+                // reset static vars
+                lastTimeOverTemp = 0;
+                isHeatingUp = true;
+                powerIntegral = 0;
+            }
+
+            // check current temp
+            temperature.read();
+
+            if (rampingInitially)
+            {
+                // TODO if we are 30 degrees away from soak temp, set duty cycle to 30
+                if ((LEARNING_SOAK_TEMP-temperature.current) < 30) {
+                    relearnedPower = 30;
+                } else if ((LEARNING_SOAK_TEMP-temperature.current) < 15) {
+                    rampingInitially = false;
+                    relearnedPower = 15;
+                } else {
+                    relearnedPower = 100;
+                }
+
+                return;
+            }
+
+            // at this point we are not in the initial ramp up.
+            // we are trying to maintain a constant temp.
+
+            if (temperature.current > LEARNING_SOAK_TEMP) {
+                if (isHeatingUp) {
+                    isHeatingUp = false;
+
+                    // only decrease the duty cycle every 30 seconds
+                    if (millis()-lastTimeOverTemp > (30*1000)) {
+                        lastTimeOverTemp = millis();
+                        if (relearnedPower > 0)
+                            relearnedPower--;
+                    }
+
+                    // reset power integral
+                    powerIntegral = 0;
+                }
+            }
+            else {
+                isHeatingUp = true;
+
+                if (LEARNING_SOAK_TEMP - temperature.current > 1.0)
+                    powerIntegral++;
+                if (LEARNING_SOAK_TEMP - temperature.current > 5.0)
+                    powerIntegral++;
+
+                if (powerIntegral > 30) {
+                    powerIntegral = 0;
+
+                    if (relearnedPower < 100) {
+                        relearnedPower++;
+                    }
+                }
+            }
+
+        }
+
+        void drawPowerUsage() {
+            // get current duty cycle for all heating elements
+            // rate the current duty cycle
+            ParamRating rating = temperature.params.rate(LearnedPower, relearnedPower);
+
+            switch (rating) {
+            case GOOD_RATING:
+                tft.setTextColor(GOOD_RATING_COLOR);
+                break;
+            case OKAY_RATING:
+                tft.setTextColor(OKAY_RATING_COLOR);
+                break;
+            case BAD_RATING:
+                tft.setTextColor(BAD_RATING_COLOR);
+                break;
+            }
+
+            tft.setCursor(220, 190);
+            tft.setFont(&FreeSerif18pt7b);
+            tft.print((int)relearnedPower);
+            tft.print("%");
+        }
+
     private:
+        bool reset = true;
         bool rerender = true;
+        float relearnedPower;
+        float LEARNING_SOAK_TEMP = 120;
+        bool rampingInitially = true;
     };
     PowerStage powerStage;
 

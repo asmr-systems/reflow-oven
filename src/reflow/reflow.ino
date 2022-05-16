@@ -80,11 +80,11 @@ float Profiles[4][9] = {
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
   {
       1,
-      120,
-      120,
+      110,
+      130,
       2400,
       4,
-      120,
+      130,
       150,
       360,
       360,
@@ -664,25 +664,36 @@ public:
         if ((millis() - lastCycleStartTime) > powerPeriod) {
             lastCycleStartTime = millis();
             // turn on all elements
-            setHeatingElements(false, false, false);
+            setHeatingElements(true, true, true);
             return;
         }
 
-        bool off[3] = {false, false, false};
+        bool activations[3] = {false, false, false};
 
         for (int i = 0; i < 3; i++) {
-            if ((millis()-lastCycleStartTime) > (dutyCycle[i]*powerPeriod)) {
-                off[i] = true;
+            if ((millis()-lastCycleStartTime) < ((dutyCycle[i]/100)*powerPeriod)) {
+                activations[i] = true;
             }
+            // Serial.print(i); Serial.print(": "); Serial.println(dutyCycle[i]*powerPeriod);
         }
 
-        setHeatingElements(off[0], off[1], off[2]);
+        setHeatingElements(activations[0], activations[1], activations[2]);
     }
 
     void setDutyCycles(float boost, float bottom, float top) {
-        dutyCycle[0] = boost;
-        dutyCycle[1] = bottom;
-        dutyCycle[2] = top;
+        dutyCycle[0] = constrain(boost, 0, 100);
+        dutyCycle[1] = constrain(bottom, 0 , 100);
+        dutyCycle[2] = constrain(top, 0, 100);
+    }
+
+    void plotHeatingElementIndicators(int x, int y, int r) {
+        int margin = 5;
+        int _x[3] = {x+r, margin + x+r*3, 2*margin + x+r*5};
+        int _y = y + r;
+        for (int i=0; i<3; i++) {
+            tft.fillCircle(_x[i], _y, r, heatingElementsOn[i] ? ORANGE : BLUE);
+        }
+
     }
 
     void update() {
@@ -714,6 +725,8 @@ public:
     }
 
     void setHeatingElements(bool boost, bool bottom, bool top) {
+        if (disabled) return;
+
         // 0x03 is just top, 0x05 just bottom, 0x06 is just boost
         // It should work with all three on at the same time!
         uint8_t bits = 0x00;
@@ -724,15 +737,29 @@ public:
         digitalWrite(HEATING_ELEMENT_CS, LOW);
         SPI.transfer(bits);
         digitalWrite(HEATING_ELEMENT_CS, HIGH);
+
+        heatingElementsOn[0] = boost;
+        heatingElementsOn[1] = bottom;
+        heatingElementsOn[2] = top;
     }
 
     void off() {
         setHeatingElements(false, false, false);
     }
+
+    void disable() {
+        off();
+        disabled = true;
+    }
+
+    void enable() {
+        disabled = false;
+    }
 private:
     MAX6675* therm;
     unsigned long last_sample_time = 0;
-
+    bool heatingElementsOn[3] = {false, false, false};
+    bool disabled = false;
 };
 
 
@@ -787,7 +814,10 @@ public:
 
     void renderLineAt(int temp, int color = BLUE) {
         int dash_len = 5;
+        int font_offset = 5;
         int scaled_temp = scale_temp(temp);
+        tft.setCursor(x, scaled_temp + font_offset);
+        tft.println((int)(temp));
         dashedHLine(axes.margin_x+axes.width, scaled_temp, w - axes.width, dash_len, color);
     }
 
@@ -1171,13 +1201,19 @@ public:
                 plot.render_temperature_measurement(temperature, learning_clock);
             }
 
-            updateRelearnedPower();
+            // only update heating every second
+            static int lastUpdatedTempTime = 0;
+            if (millis() - lastUpdatedTempTime > 1000) {
+                updateRelearnedPower();
 
-            drawPowerUsage();
+                drawPowerUsage();
+                lastUpdatedTempTime = millis();
+            }
 
             // control heating elements
             temperature.setDutyCycles(relearnedPower, relearnedPower, relearnedPower);
             temperature.controlHeatingElements();
+            temperature.plotHeatingElementIndicators(130, 170, 10);
 
             gotoMenuButton.update();
             if (gotoMenuButton.is_unpressed())
@@ -1211,12 +1247,14 @@ public:
 
             if (rampingInitially)
             {
-                // TODO if we are 30 degrees away from soak temp, set duty cycle to 30
-                if ((LEARNING_SOAK_TEMP-temperature.current) < 30) {
-                    relearnedPower = 30;
-                } else if ((LEARNING_SOAK_TEMP-temperature.current) < 15) {
+                // if we are 15 degrees away from soak temp, set duty cycle to 15 and stop initial ramp
+                if ((LEARNING_SOAK_TEMP-temperature.current) < 15) {
                     rampingInitially = false;
                     relearnedPower = 15;
+                }
+                else if ((LEARNING_SOAK_TEMP-temperature.current) < 30) {
+                    relearnedPower = 30;
+
                 } else {
                     relearnedPower = 100;
                 }
@@ -1227,12 +1265,16 @@ public:
             // at this point we are not in the initial ramp up.
             // we are trying to maintain a constant temp.
 
-            if (temperature.current > LEARNING_SOAK_TEMP) {
+            if ((temperature.current-LEARNING_SOAK_TEMP) > 1) {
                 if (isHeatingUp) {
                     isHeatingUp = false;
 
-                    // only decrease the duty cycle every 30 seconds
-                    if (millis()-lastTimeOverTemp > (30*1000)) {
+                    // turn all heating elements off until we are under temperature again!
+                    temperature.disable();
+
+                    // only decrease the duty cycle every 60 seconds
+                    // lets try every minute.... 30 seconds seems to short.
+                    if (millis()-lastTimeOverTemp > (60*1000)) {
                         lastTimeOverTemp = millis();
                         if (relearnedPower > 0)
                             relearnedPower--;
@@ -1244,6 +1286,7 @@ public:
             }
             else {
                 isHeatingUp = true;
+                temperature.enable();
 
                 if (LEARNING_SOAK_TEMP - temperature.current > 1.0)
                     powerIntegral++;
@@ -1277,6 +1320,8 @@ public:
                 tft.setTextColor(BAD_RATING_COLOR);
                 break;
             }
+
+            tft.fillRect(220, 150, 90, 50, WHITE);
 
             tft.setCursor(220, 190);
             tft.setFont(&FreeSerif18pt7b);

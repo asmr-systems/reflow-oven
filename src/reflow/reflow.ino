@@ -368,10 +368,13 @@ public:
         time_remaining = total_duration;
     }
 
-    void update() {
+    bool update() {
         if (tick()) {
             render();
+            return true;
         }
+
+        return false;
     }
 
     bool tick() {
@@ -496,11 +499,15 @@ public:
     }
 
     uint8_t read(Param param) {
-        return eep->read(param);
+        uint8_t val = eep->read(param);
+        Serial.print(param); Serial.print(": ");
+        Serial.println(val);
+        return val;
     }
 
     void write(Param param, uint8_t value) {
         eep->update(param, value);
+        index[param] = value; // update in memory cache
     }
 
     ParamRating rate(Param param) {
@@ -518,15 +525,15 @@ public:
             if (value < okay_threshold) return OKAY_RATING;
             break;
         case LearnedInertia:
-            good_threshold = 90;
+            good_threshold = 36;
             okay_threshold = 60;
-            if (value > good_threshold) return GOOD_RATING;
-            if (value > okay_threshold) return OKAY_RATING;
+            if (value <= good_threshold) return GOOD_RATING;
+            if (value < okay_threshold) return OKAY_RATING;
             break;
         case LearnedInsulation:
-            good_threshold = 90;
-            okay_threshold = 60;
-            if (value > good_threshold) return GOOD_RATING;
+            good_threshold = 130;
+            okay_threshold = 80;
+            if (value >= good_threshold) return GOOD_RATING;
             if (value > okay_threshold) return OKAY_RATING;
             break;
         case OvenScore:
@@ -745,6 +752,10 @@ public:
 
     void off() {
         setHeatingElements(false, false, false);
+    }
+
+    void on() {
+        setHeatingElements(true, true, true);
     }
 
     void disable() {
@@ -1106,9 +1117,12 @@ private:
 };
 
 enum LearningStage {
-    NOTICE_STAGE    = 0,
-    MAYBE_ABORT     = 1,
-    POWER_STAGE     = 2,
+    NOTICE_STAGE     = 0,
+    MAYBE_ABORT      = 1,
+    POWER_STAGE      = 2,
+    INERTIA_STAGE    = 3,
+    INSULATION_STAGE = 4,
+    COMPLETE_STAGE   = 5,
 };
 
 LearningStage learningStage = NOTICE_STAGE;
@@ -1117,6 +1131,7 @@ LearningStage learningStage = NOTICE_STAGE;
 const int learning_time = 3600; // 1 hour
 Clock learning_clock = Clock(learning_time, 0, 0);
 Phases learningPhases(10, 380, learning_profile);
+Plot learningPlot = Plot(0, 200, tft.width(), 250, &learningPhases, true);
 
 class LearningScreen {
 public:
@@ -1160,7 +1175,7 @@ public:
 
     class PowerStage {
     public:
-        Plot plot = Plot(0, 200, tft.width(), 250, &learningPhases, true);
+
         Temperature temperature = Temperature(&thermocouple, 0, 160);
 
         void render() {
@@ -1185,8 +1200,8 @@ public:
             drawPowerUsage();
 
             // plot
-            plot.render();
-            plot.renderLineAt(120);
+            learningPlot.render();
+            learningPlot.renderLineAt(120);
 
             rerender = false;
         }
@@ -1194,11 +1209,14 @@ public:
         void update() {
             if (rerender) render();
 
-            learning_clock.update();
+            // only start clock updates after initial ramp
+            if (!rampingInitially)
+                learning_clock.update();
+
             // plot temperature points
             if (temperature.read()) {
                 temperature.render();
-                plot.render_temperature_measurement(temperature, learning_clock);
+                learningPlot.render_temperature_measurement(temperature, learning_clock);
             }
 
             // only update heating every second
@@ -1223,7 +1241,19 @@ public:
                 rerender = true;
             }
 
-            // TODO select which phase we will be in
+            // select which phase we will be in
+            if (learning_clock.time_elapsed >= powerPhaseEnd) {
+                // save power parameter
+                float relearnedPowerAvg = relearnedPowerSum/relearnedPowerSamples;
+                // write to globally scoped temperature, my guess is that the first I2C
+                // instance is the one that will work.
+                ::temperature.params.write(LearnedPower, (int)relearnedPowerAvg);
+
+                // end phase
+                learningStage = INERTIA_STAGE;
+                rerender = true;
+            }
+
         }
 
         void updateRelearnedPower() {
@@ -1302,6 +1332,13 @@ public:
                 }
             }
 
+            // only update average if we are close and it has already been 10 minutes
+            // should be enough time to have the oscillations stabilize
+            if (abs(temperature.current - LEARNING_SOAK_TEMP) <= 1 && (learning_clock.time_elapsed > (10*60))) {
+                // update running average
+                relearnedPowerSamples++;
+                relearnedPowerSum += relearnedPower;
+            }
         }
 
         void drawPowerUsage() {
@@ -1327,6 +1364,36 @@ public:
             tft.setFont(&FreeSerif18pt7b);
             tft.print((int)relearnedPower);
             tft.print("%");
+
+            // also draw average
+            tft.setTextColor(BLACK);
+            tft.setCursor(160, 150);
+            tft.setFont(&FreeSerif18pt7b);
+            tft.print("avg: ");
+
+            if (relearnedPowerSamples > 0) {
+                float relearnedPowerAvg = relearnedPowerSum/relearnedPowerSamples;
+                ParamRating avgRating = temperature.params.rate(LearnedPower, relearnedPowerAvg);
+
+                switch (avgRating) {
+                case GOOD_RATING:
+                    tft.setTextColor(GOOD_RATING_COLOR);
+                    break;
+                case OKAY_RATING:
+                    tft.setTextColor(OKAY_RATING_COLOR);
+                    break;
+                case BAD_RATING:
+                    tft.setTextColor(BAD_RATING_COLOR);
+                    break;
+                }
+
+                tft.fillRect(220, 110, 90, 50, WHITE);
+                tft.setCursor(220, 150);
+                tft.setFont(&FreeSerif18pt7b);
+                tft.print((int)relearnedPowerAvg);
+                tft.print("%");
+            }
+
         }
 
     private:
@@ -1335,8 +1402,256 @@ public:
         float relearnedPower;
         float LEARNING_SOAK_TEMP = 120;
         bool rampingInitially = true;
+        float relearnedPowerSum = 0;
+        float relearnedPowerSamples = 0;
+        int powerPhaseEnd = 2400; // 40 minutes
+
     };
     PowerStage powerStage;
+
+    class InertiaStage {
+    public:
+        Temperature temperature = Temperature(&thermocouple, 0, 160);
+
+        void render() {
+            tft.fillRect(0, 60, tft.width(), 140, WHITE);
+
+            tft.setCursor(0, 80);
+            tft.setTextColor(BLACK);
+            tft.print("Learning Inertia");
+
+            tft.setCursor(0, 120);
+            tft.setTextColor(BLACK);
+            tft.setFont(&FreeSerif9pt7b);
+            tft.print("increasing to 150C");
+
+            learningPlot.renderLineAt(150);
+
+            startTime = learning_clock.time_elapsed;
+
+            rerender = false;
+        }
+
+        void update() {
+            if (rerender) render();
+
+            if (atStartingTemp && learning_clock.update()) {
+                tft.fillRect(220, 150, 90, 50, WHITE);
+                tft.setCursor(220, 190);
+                tft.setFont(&FreeSerif18pt7b);
+                int inertiaTime = learning_clock.time_elapsed - startTime;
+                ParamRating rating = temperature.params.rate(LearnedInertia, inertiaTime);
+
+                switch (rating) {
+                case GOOD_RATING:
+                    tft.setTextColor(GOOD_RATING_COLOR);
+                    break;
+                case OKAY_RATING:
+                    tft.setTextColor(OKAY_RATING_COLOR);
+                    break;
+                case BAD_RATING:
+                    tft.setTextColor(BAD_RATING_COLOR);
+                    break;
+                }
+
+                tft.print((int)(inertiaTime));
+                tft.print("s");
+            }
+
+            // plot temperature points
+            if (temperature.read()) {
+                temperature.render();
+                learningPlot.render_temperature_measurement(temperature, learning_clock);
+            }
+
+
+            gotoMenuButton.update();
+            if (gotoMenuButton.is_unpressed())
+            {
+                // really abort?
+
+                rerender = true;
+            }
+
+            temperature.plotHeatingElementIndicators(130, 170, 10);
+
+            if (!atStartingTemp) {
+                if (temperature.current > (LEARNING_INERTIA_START_TEMP+1)) {
+                    temperature.off();
+                    return;
+                }
+
+                if (temperature.current < (LEARNING_INERTIA_START_TEMP-2)) {
+                    temperature.on();
+                    return;
+                }
+
+                atStartingTemp = true;
+                startTime = learning_clock.time_elapsed;
+            }
+
+            // control heating elements, set the duty cycles to 80
+            temperature.enable();
+            temperature.setDutyCycles(80, 80, 80);
+            temperature.controlHeatingElements();
+
+
+            // select which phase we will be in
+            if (temperature.current >= LEARNING_PEAK_TEMP) {
+                // save number of seconds it took to heat
+                uint8_t inertiaTime = learning_clock.time_elapsed - startTime;
+                // write to globally scoped temperature, my guess is that the first I2C
+                // instance is the one that will work.
+                ::temperature.params.write(LearnedInertia, inertiaTime);
+
+                // switch to cooldown phase
+                learningStage = INSULATION_STAGE;
+
+                temperature.off();
+
+                rerender = true;
+            }
+        }
+    private:
+        float LEARNING_PEAK_TEMP = 150;
+        float LEARNING_INERTIA_START_TEMP = 120;
+        int startTime = 0;
+        bool rerender = true;
+
+        bool atStartingTemp = false;
+    };
+    InertiaStage inertiaStage;
+
+    class InsulationStage {
+    public:
+        Temperature temperature = Temperature(&thermocouple, 0, 160);
+
+        void render() {
+            tft.fillRect(0, 60, tft.width(), 140, WHITE);
+
+            tft.setCursor(0, 80);
+            tft.setTextColor(BLACK);
+            tft.print("Learning Insulation");
+
+            tft.setCursor(0, 120);
+            tft.setTextColor(BLACK);
+            tft.setFont(&FreeSerif9pt7b);
+            tft.print("decreasing to 120C");
+
+            learningPlot.renderLineAt(150);
+
+            startTime = learning_clock.time_elapsed;
+
+            rerender = false;
+        }
+
+        void update() {
+            if (rerender) render();
+
+            if (atStartingTemp && learning_clock.update()) {
+                tft.fillRect(220, 150, 90, 50, WHITE);
+                tft.setCursor(220, 190);
+                tft.setFont(&FreeSerif18pt7b);
+                int insulationTime = learning_clock.time_elapsed - startTime;
+                ParamRating rating = temperature.params.rate(LearnedInsulation, insulationTime);
+
+                switch (rating) {
+                case GOOD_RATING:
+                    tft.setTextColor(GOOD_RATING_COLOR);
+                    break;
+                case OKAY_RATING:
+                    tft.setTextColor(OKAY_RATING_COLOR);
+                    break;
+                case BAD_RATING:
+                    tft.setTextColor(BAD_RATING_COLOR);
+                    break;
+                }
+
+                tft.print((int)insulationTime);
+                tft.print("s");
+            }
+
+            // plot temperature points
+            if (temperature.read()) {
+                temperature.render();
+                learningPlot.render_temperature_measurement(temperature, learning_clock);
+            }
+
+            temperature.plotHeatingElementIndicators(130, 170, 10);
+
+            gotoMenuButton.update();
+            if (gotoMenuButton.is_unpressed())
+            {
+                // really abort?
+
+                rerender = true;
+            }
+
+            if (!atStartingTemp) {
+                if (temperature.current > (LEARNING_INSULATION_START_TEMP+1)) {
+                    temperature.off();
+                    return;
+                }
+
+                if (temperature.current < (LEARNING_INSULATION_START_TEMP-2)) {
+                    temperature.on();
+                    return;
+                }
+
+                atStartingTemp = true;
+                temperature.off();
+                startTime = learning_clock.time_elapsed;
+            }
+
+            // select which phase we will be in
+            if (temperature.current <= LEARNING_MIN_TEMP) {
+                // save number of seconds it took to heat
+                uint8_t insulationTime = learning_clock.time_elapsed - startTime;
+                // write to globally scoped temperature, my guess is that the first I2C
+                // instance is the one that will work.
+                ::temperature.params.write(LearnedInsulation, insulationTime);
+
+                // switch to cooldown phase
+                learningStage = COMPLETE_STAGE;
+
+                temperature.off();
+
+                rerender = true;
+            }
+        }
+    private:
+        float LEARNING_MIN_TEMP = 120;
+        float LEARNING_INSULATION_START_TEMP = 150;
+        int startTime = 0;
+        bool atStartingTemp = false;
+        bool rerender = true;
+    };
+    InsulationStage insulationStage;
+
+    class CompleteStage {
+    public:
+        void render() {
+            // basically just goes back to parameter screen after saving over all oven score
+            float powerScore = temperature.params.learnedPower;
+            float inertiaScore = temperature.params.learnedInertia;
+            float insulationScore = temperature.params.learnedInsulation;
+
+            powerScore = 100 - (temperature.params.rate(LearnedPower, powerScore) * 33.3);
+            inertiaScore = 100 - (temperature.params.rate(LearnedInertia, inertiaScore) * 33.3);
+            insulationScore = 100 - (temperature.params.rate(LearnedInsulation, insulationScore) * 33.3);
+
+            float ovenScore = (0.4*powerScore) + (0.4*inertiaScore) + (0.2*insulationScore);
+
+            // write to globally scoped temperature, my guess is that the first I2C
+            // instance is the one that will work.
+            ::temperature.params.write(OvenScore, (int)ovenScore);
+
+            // Now exit
+            learningStage = NOTICE_STAGE;
+            state = LEARNING_DASHBOARD;
+        }
+    };
+    CompleteStage completeStage;
 
     void render() {
         tft.fillScreen(WHITE);
@@ -1348,6 +1663,15 @@ public:
             break;
         case POWER_STAGE:
             powerStage.render();
+            break;
+        case INERTIA_STAGE:
+            inertiaStage.render();
+            break;
+        case INSULATION_STAGE:
+            insulationStage.render();
+            break;
+        case COMPLETE_STAGE:
+            completeStage.render();
             break;
         }
 
@@ -1363,6 +1687,15 @@ public:
             break;
         case POWER_STAGE:
             powerStage.update();
+            break;
+        case INERTIA_STAGE:
+            inertiaStage.update();
+            break;
+        case INSULATION_STAGE:
+            insulationStage.update();
+            break;
+        case COMPLETE_STAGE:
+            completeStage.render();
             break;
         }
     }
@@ -1425,21 +1758,18 @@ void setup() {
 
 
   // DEBUG
-  // temperature.params.write(LearningComplete, 255);
-  // temperature.params.write(LearnedPower, 88);
-  // temperature.params.write(LearnedInertia, 99);
-  // temperature.params.write(LearnedInsulation, 100);
+  // temperature.params.write(LearningComplete, 0);
+  // temperature.params.write(LearnedPower, 6);
+  // temperature.params.write(LearnedInertia, 19);
+  // temperature.params.write(LearnedInsulation, 193);
   // temperature.params.write(OvenScore, 90);
 
   // DEBUGGING: for some reason, we can't read from this.
-  temperature.params.read(LearningComplete);
-  temperature.params.read(LearnedPower);
-  temperature.params.read(LearnedInertia);
-  temperature.params.read(LearnedInsulation);
-  temperature.params.read(OvenScore);
-
-  // DEBUGGING TAKE OUT
-  // temperature.controlHeatingElements();
+  // temperature.params.read(LearningComplete);
+  // temperature.params.read(LearnedPower);
+  // temperature.params.read(LearnedInertia);
+  // temperature.params.read(LearnedInsulation);
+  // temperature.params.read(OvenScore);
 }
 
 void loop() {

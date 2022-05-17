@@ -263,11 +263,56 @@ public:
     phase reflow;           // temperature above liquidus
     phase cooldown;
 
+    phase* index[5];
+
     int total_duration;
     PHASE_IDX current_phase = STANDBY;
 
     Phases(int x, int y, int profile) : x(x), y(y) {
         calculate_from_profile(profile);
+
+        index[PREHEAT-1] = &preheat;
+        index[SOAK-1] = &soak;
+        index[REFLOW_PREHEAT-1] = &reflow_rampup;
+        index[REFLOW-1] = &reflow;
+        index[COOLOFF-1] = &cooldown;
+    }
+
+    float getExpectedTemperature(int time_elapsed) {
+        // determine how far into current phase we are
+        int timeIntoPhase = getTimeIntoPhase(time_elapsed);
+
+        int i = current_phase - 1;
+
+        // linear equation, y = mx+b
+        return (index[i]->rate*timeIntoPhase) + index[i]->start_temp;
+    }
+
+    float getExpectedTempChange(int time_elapsed, int dt, float expectedTemp) {
+        // determine how far into current phase we are
+        int timeIntoPhase = getTimeIntoPhase(time_elapsed);
+
+        int i = current_phase - 1;
+
+        if ((dt + timeIntoPhase) > index[i]->duration) {
+            if (i < 4) {
+                // not last phase
+                return index[i+1]->start_temp - expectedTemp;
+            }
+            // otherwise its the last phase and in 1 second it will be over.
+            return index[i]->rate;
+        }
+
+        // get expected temp in dt seconds
+        return getExpectedTemperature(time_elapsed+dt) - expectedTemp;
+    }
+
+    int getTimeIntoPhase(int time_elapsed) {
+        int phaseStartTime = 0;
+        for (int i = 0; i < (current_phase-2); i++) {
+            phaseStartTime += index[i]->duration;
+        }
+        return time_elapsed - phaseStartTime;
     }
 
     void calculate_from_profile(int prof, float initial_temp = 25.0) {
@@ -563,24 +608,25 @@ public:
 
     // power bias for each heating element
     uint16_t bias[3] = {
-        0, // BOOST
-        0, // BOTTOM
-        0, // TOP
+        50, // BOOST
+        100, // BOTTOM
+        80, // TOP
     };
 
-    const uint16_t maxBias = 10;
+    const uint16_t maxBias = 100;
 
     // duty cycle for each heating element
     double dutyCycle[3] = {
-        50, // BOOST
-        50, // BOTTOM
-        50, // TOP
+        30, // BOOST
+        30, // BOTTOM
+        30, // TOP
     };
 
     float powerPeriod = 1000; // 1000 ms
 
     // temperature readings.
     Temperature(MAX6675* therm, int x, int y) : therm(therm), x(x), y(y) {}
+    Temperature(MAX6675* therm, int x, int y, Phases* phases, Clock* clock) : therm(therm), x(x), y(y), phases(phases), clock(clock) {}
 
     void begin() {
         pinMode(THERM_CS, OUTPUT);
@@ -623,24 +669,38 @@ public:
         tft.println(" C");
     }
 
+    void update() {
+        adjust();  // adjust the power output for heating elements (run every 1 second)
+
+        controlHeatingElements(); // turn power on/off for each heating element
+    }
+
     void adjust() {
+        static int startTime = 0;
         static double proportionalTerm = 0;
+        int dt = 1000; // 1 second
 
-        // TODO exit if 1 second has not yet elapsed.
+        // exit if 1 second has not yet elapsed.
+        if (millis() - startTime < dt) return;
 
-        // TODO read current temp
-        double actualTemp = 0;
-        // TODO calculate expected temp
-        double expectedTemp = 0;
-        // TODO calculate expectedTempDelta?
-        double expectedTempDelta = 1;
+        startTime = millis();
+
+
+        // read current temp
+        read();
+        double actualTemp = current;
+        // calculate expected temp
+        clock->tick();
+        double expectedTemp = phases->getExpectedTemperature(clock->time_elapsed);
+        // calculate expectedTempDelta (temp change assuming we are following the curve perfectly)
+        double expectedTempDelta = phases->getExpectedTempChange(clock->time_elapsed, 1, expectedTemp);
 
         // perform standard pid calculation: y(t) = (Kp*e) + (Ki*int(e(t), dt)) + (Kd*de/dt)
         // with a 1 second interval
-        double error = expectedTemp - actualTemp;
+        double error            = expectedTemp - actualTemp;
         double integralTerm     = integralTerm + error;
         double derivativeTerm   = error - proportionalTerm;
-        proportionalTerm = error;
+        proportionalTerm        = error;
 
         // get base power output based on learned values
         double output = getBaseOutputPower(expectedTemp, expectedTempDelta, bias, maxBias);
@@ -687,6 +747,20 @@ public:
         setHeatingElements(activations[0], activations[1], activations[2]);
     }
 
+    uint16_t getBaseOutputPower(double temp, double incr, uint16_t *bias, uint16_t maxBias) {
+        temp = constrain(temp, 20, 250);
+
+        // determine power needed to maintain current temperature
+        double basePower = temp * 0.83 * params.learnedPower/100;
+        double insulationPower = map(params.learnedInsulation, 0, 300, map(temp, 0, 400, 0, 20), 0);
+        double risePower = incr * basePower * 2;
+
+        float biasFactor = (float)2 * maxBias/(bias[HEATING_ELEMENT_BOTTOM] + bias[HEATING_ELEMENT_TOP]);
+
+        double totalPower = biasFactor * (basePower + insulationPower + risePower);
+        return totalPower < 100 ? totalPower : 100;
+    }
+
     void setDutyCycles(float boost, float bottom, float top) {
         dutyCycle[0] = constrain(boost, 0, 100);
         dutyCycle[1] = constrain(bottom, 0 , 100);
@@ -701,34 +775,6 @@ public:
             tft.fillCircle(_x[i], _y, r, heatingElementsOn[i] ? ORANGE : BLUE);
         }
 
-    }
-
-    void update() {
-        const int dt = 1000; // 1s
-        static int start_time   = 0;
-
-        if (millis() - start_time > dt)
-        {
-            start_time = millis();
-
-            //adjust();  // adjust the power output for heating elements (run every 1 second)
-
-            controlHeatingElements(); // turn power on/off for each heating element
-        }
-    }
-
-    uint16_t getBaseOutputPower(double temp, double incr, uint16_t *bias, uint16_t maxBias) {
-        temp = constrain(temp, 20, 250);
-
-        // determine power needed to maintain current temperature
-        double basePower = temp * 0.83 * params.learnedPower/100;
-        double insulationPower = map(params.learnedInsulation, 0, 300, map(temp, 0, 400, 0, 20), 0);
-        double risePower = incr * basePower * 2;
-
-        float biasFactor = (float)2 * maxBias/(bias[HEATING_ELEMENT_BOTTOM] + bias[HEATING_ELEMENT_TOP]);
-
-        double totalPower = biasFactor * (basePower + insulationPower + risePower);
-        return totalPower < 100 ? totalPower : 100;
     }
 
     void setHeatingElements(bool boost, bool bottom, bool top) {
@@ -768,6 +814,8 @@ public:
     }
 private:
     MAX6675* therm;
+    Phases* phases;
+    Clock* clock;
     unsigned long last_sample_time = 0;
     bool heatingElementsOn[3] = {false, false, false};
     bool disabled = false;
@@ -963,7 +1011,7 @@ Button profile_button(0, 0, tft.width(), 40, ProfileNames[selected_profile], WHI
 Phases phases(10, 380, selected_profile);
 Plot plot(0, 40, tft.width(), tft.height()*0.70, &phases);
 Clock clock(phases.total_duration, 200, 380);
-Temperature temperature(&thermocouple, 200, 430);
+Temperature temperature(&thermocouple, 200, 430, &phases, &clock);
 
 class MainMenu {
 public:
@@ -1404,6 +1452,8 @@ public:
         bool rampingInitially = true;
         float relearnedPowerSum = 0;
         float relearnedPowerSamples = 0;
+        // NOTE: if we are bypassing the power learning phase, we should keep
+        // this phase at 6 minutes to let is stabilize.
         int powerPhaseEnd = 2400; // 40 minutes
 
     };
@@ -1508,6 +1558,10 @@ public:
                 learningStage = INSULATION_STAGE;
 
                 temperature.off();
+
+                // delay for 2 seconds
+                // because the temperature may be rising very quickly
+                delay(2000);
 
                 rerender = true;
             }
@@ -1817,12 +1871,12 @@ void loop() {
     case MAIN_RUNNING:
         clock.update();
         start_button.update();
-        temperature.update(); // TODO this is where PID code should go.
         phases.update(clock.time_elapsed);
         if (temperature.read()) {
             temperature.render();
             plot.render_temperature_measurement(temperature, clock);
         }
+        temperature.update(); // TODO this is where PID code should go.
         if (start_button.is_unpressed()) {
             plot.render();
             start_button.txt = "START";

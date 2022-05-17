@@ -74,8 +74,10 @@ void dashedHLine(int x, int y, int w, int dash_len, int color) {
 #define REFLOW_PEAK_TEMP  6  // C
 #define REFLOW_DURATION   7  // s
 #define COOLDOWN          8  // C/s
+
+// initial ramp up should be about 4 minutes (0.8 C/s rampup)
 float Profiles[4][9] = {
-  {1.4, 150, 175, 90, 0.84, 217, 250, 120, 4.4},
+    {0.8, 150, 175, 90, 0.84, 217, 250, 120, -1}, // last entry was 4.4
   {1, 100, 110, 40, 5, 138, 150, 20, 5},
   {0, 0, 0, 0, 0, 0, 0, 0, 0},
   {
@@ -284,6 +286,13 @@ public:
 
         int i = current_phase - 1;
 
+        if (current_phase == REFLOW && timeIntoPhase >= (reflow.duration/2)) {
+            // make second half of reflow phases rate negative
+            return (-index[i]->rate*(timeIntoPhase - (reflow.duration/2))) + index[i]->peak_temp;
+        }
+
+        if (current_phase == COOLOFF) return 0;
+
         // linear equation, y = mx+b
         return (index[i]->rate*timeIntoPhase) + index[i]->start_temp;
     }
@@ -309,7 +318,7 @@ public:
 
     int getTimeIntoPhase(int time_elapsed) {
         int phaseStartTime = 0;
-        for (int i = 0; i < (current_phase-2); i++) {
+        for (int i = 0; i < (current_phase-1); i++) {
             phaseStartTime += index[i]->duration;
         }
         return time_elapsed - phaseStartTime;
@@ -327,8 +336,8 @@ public:
         // soak
         soak.start_temp = Profiles[prof][SOAK_START_TEMP];
         soak.end_temp   = Profiles[prof][SOAK_END_TEMP];
-        soak.rate       = (soak.end_temp-soak.start_temp)/soak.duration;
         soak.duration   = Profiles[prof][SOAK_DURATION];
+        soak.rate       = (float)(soak.end_temp-soak.start_temp)/(float)soak.duration;
         soak.peak_temp  = soak.end_temp;
 
         // reflow_ramp
@@ -343,13 +352,13 @@ public:
         reflow.end_temp   = Profiles[prof][REFLOW_START_TEMP];
         reflow.duration   = Profiles[prof][REFLOW_DURATION];
         reflow.peak_temp  = Profiles[prof][REFLOW_PEAK_TEMP];
-        reflow.rate       = 2*(reflow.peak_temp - reflow.start_temp)/reflow.duration;
+        reflow.rate       = 2*(float)(reflow.peak_temp - reflow.start_temp)/(float)reflow.duration;
 
         // cooldown
         cooldown.start_temp = reflow.end_temp;
         cooldown.end_temp   = initial_temp;
         cooldown.rate       = Profiles[prof][COOLDOWN];
-        cooldown.duration   = -(cooldown.end_temp - cooldown.start_temp)/cooldown.rate;
+        cooldown.duration   = (cooldown.end_temp - cooldown.start_temp)/cooldown.rate;
         cooldown.peak_temp  = reflow.end_temp;
 
         // total
@@ -545,8 +554,8 @@ public:
 
     uint8_t read(Param param) {
         uint8_t val = eep->read(param);
-        Serial.print(param); Serial.print(": ");
-        Serial.println(val);
+        // Serial.print(param); Serial.print(": ");
+        // Serial.println(val);
         return val;
     }
 
@@ -678,6 +687,8 @@ public:
     void adjust() {
         static int startTime = 0;
         static double proportionalTerm = 0;
+        static float integralTerm = 0;
+        static bool DonePreheat = false;
         int dt = 1000; // 1 second
 
         // exit if 1 second has not yet elapsed.
@@ -685,20 +696,38 @@ public:
 
         startTime = millis();
 
+        if (phases->current_phase == COOLOFF) {
+            off();
+            disable();
+            return;
+        }
+
+        enable();
 
         // read current temp
         read();
         double actualTemp = current;
         // calculate expected temp
-        clock->tick();
-        double expectedTemp = phases->getExpectedTemperature(clock->time_elapsed);
-        // calculate expectedTempDelta (temp change assuming we are following the curve perfectly)
-        double expectedTempDelta = phases->getExpectedTempChange(clock->time_elapsed, 1, expectedTemp);
+        double expectedTemp, expectedTempDelta;
+        if (phases->current_phase == PREHEAT) {
+            expectedTemp = phases->soak.start_temp;
+            expectedTempDelta = 0;
+        } else {
+            if (!DonePreheat) {
+                DonePreheat = true;
+                proportionalTerm = 0;
+                integralTerm = 0;
+            }
+            clock->tick();
+            expectedTemp = phases->getExpectedTemperature(clock->time_elapsed);
+            // calculate expectedTempDelta (temp change assuming we are following the curve perfectly)
+            expectedTempDelta = phases->getExpectedTempChange(clock->time_elapsed, 1, expectedTemp);
+        }
 
         // perform standard pid calculation: y(t) = (Kp*e) + (Ki*int(e(t), dt)) + (Kd*de/dt)
         // with a 1 second interval
         double error            = expectedTemp - actualTemp;
-        double integralTerm     = integralTerm + error;
+        integralTerm     = integralTerm + error;
         double derivativeTerm   = error - proportionalTerm;
         proportionalTerm        = error;
 
@@ -709,7 +738,7 @@ public:
         // in the PID equation will be the derivative term. The other terms will be lower.
         double Kp = error < 0 ? 4 : 2;      // double the output proportionally to the error.
         double Ki = 0.01;   // keep low to prevent oscillations.
-        double Kd = map(constrain(params.learnedInertia, 30, 100), 30, 100, 30, 75); // TODO base this off of the learned inertia. typically around 35.
+        double Kd = map(constrain(params.learnedInertia, 30, 100), 30, 100, 30, 75); // base this off of the learned inertia. typically around 35.
 
         // compute PID equation
         double deltaOutput = Kp*proportionalTerm + Ki*integralTerm + Kd*derivativeTerm;
@@ -721,6 +750,23 @@ public:
         {
             dutyCycle[i] = output * bias[i] / maxBias;
         }
+
+        // DEBUGGING
+        // Serial.println(error);
+        // Serial.println(deltaOutput);
+        // Serial.print(constrain(deltaOutput, -30, 30));
+        // Serial.print(",");
+        // Serial.print(Kp*proportionalTerm);
+        // Serial.print(",");
+        // Serial.print(Ki*integralTerm);
+        // Serial.print(",");
+        // Serial.print(Kd*derivativeTerm);
+        // Serial.print(",");
+        // Serial.println(output);
+
+        Serial.print(actualTemp);
+        Serial.print(",");
+        Serial.println(expectedTemp);
     }
 
     void controlHeatingElements() {
@@ -1848,6 +1894,7 @@ void loop() {
         if (temperature.read()) {
             temperature.render();
             plot.render_temperature_measurement(temperature, clock);
+            temperature.plotHeatingElementIndicators(145, 395, 5);
         }
         gotoMenuButton.update();
         if (gotoMenuButton.is_pressed()) return;
@@ -1877,6 +1924,7 @@ void loop() {
             plot.render_temperature_measurement(temperature, clock);
         }
         temperature.update(); // TODO this is where PID code should go.
+        temperature.plotHeatingElementIndicators(145, 395, 5);
         if (start_button.is_unpressed()) {
             plot.render();
             start_button.txt = "START";
@@ -1887,12 +1935,14 @@ void loop() {
             phases.render(0);
             phases.current_phase = STANDBY;
             temperature.off();
+            temperature.plotHeatingElementIndicators(145, 395, 5);
         }
         if (clock.time_remaining == 0) {
             start_button.txt = "RESTART";
             start_button.render();
             state = MAIN_NOT_RUNNING;
             temperature.off();
+            temperature.plotHeatingElementIndicators(145, 395, 5);
         }
         break;
   }

@@ -724,6 +724,13 @@ public:
             expectedTempDelta = phases->getExpectedTempChange(clock->time_elapsed, 1, expectedTemp);
         }
 
+        // for reflow cooldown
+        if (phases->current_phase == REFLOW && (phases->getTimeIntoPhase(clock->time_elapsed) >= (phases->reflow.duration/2))) {
+                off();
+                disable();
+                // TODO INSERT CODE FOR OPENING OVEN A CRACK WITH LINEAR ACTUATOR
+        }
+
         // perform standard pid calculation: y(t) = (Kp*e) + (Ki*int(e(t), dt)) + (Kd*de/dt)
         // with a 1 second interval
         double error            = expectedTemp - actualTemp;

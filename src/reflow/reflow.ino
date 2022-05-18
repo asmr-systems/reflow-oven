@@ -573,13 +573,13 @@ public:
 
         switch (param) {
         case LearnedPower:
-            good_threshold = 12;
+            good_threshold = 15; // 12 is excellent
             okay_threshold = 35;
             if (value <= good_threshold) return GOOD_RATING;
             if (value < okay_threshold) return OKAY_RATING;
             break;
         case LearnedInertia:
-            good_threshold = 36;
+            good_threshold = 46; // 35 is excellent
             okay_threshold = 60;
             if (value <= good_threshold) return GOOD_RATING;
             if (value < okay_threshold) return OKAY_RATING;

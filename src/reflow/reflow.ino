@@ -1,4 +1,5 @@
 #include <SPI.h>
+#include <SoftwareSerial.h>
 #include <PID_v1.h>
 #include "MAX6675.h"
 #include "AT24Cxx.h"
@@ -17,7 +18,7 @@ enum HEATING_ELEMENTS {
     HEATING_ELEMENT_TOP    = 2,
 };
 
-uint8_t HEATING_ELEMENT_CS = 7;
+uint8_t HEATING_ELEMENT_CS = 3;
 
 // These are 'flexible' lines that can be changed
 #define TFT_CS 2 // 10
@@ -27,6 +28,14 @@ uint8_t HEATING_ELEMENT_CS = 7;
 
 // thermocouple pins (hardware SPI)
 #define THERM_CS 0 // chip select (0)
+
+// software serial for bluetooth
+// we were using Seeeduino Xiao for this one.
+const byte rxPin = 7;
+const byte txPin = 6;
+
+// Set up a new SoftwareSerial object
+SoftwareSerial BT(rxPin, txPin);
 
 // Use hardware SPI (on Nano, #13, #12, #11) and the above for CS/DC
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST);
@@ -202,7 +211,7 @@ public:
 private:
     bool pressed = false;
     bool unpressed = false;
-    bool disabled = false;            // button is disabled
+    bool disabled = true;            // button is disabled
 
     unsigned long start_time = 0;
     unsigned long delay_time = 80;
@@ -1835,11 +1844,11 @@ void setup() {
   // it doens't work.
   // pinMode(10, OUTPUT);
   pinMode(TFT_CS, OUTPUT);
-  pinMode(STMPE_CS, OUTPUT);
+  // pinMode(STMPE_CS, OUTPUT);
   pinMode(THERM_CS, OUTPUT);
   pinMode(HEATING_ELEMENT_CS, OUTPUT);
   digitalWrite(TFT_CS, HIGH);
-  digitalWrite(STMPE_CS, HIGH);
+  // digitalWrite(STMPE_CS, HIGH);
   digitalWrite(THERM_CS, HIGH);
   digitalWrite(HEATING_ELEMENT_CS, HIGH);
 
@@ -1847,11 +1856,11 @@ void setup() {
 
   // begin capacitive touch sensor and lcd screen
   tft.begin();
-  while (!touch.begin())
-  {
-      delay(50);
-      tft.fillScreen(RED); // maybe do something better....?
-  };
+  // while (!touch.begin())
+  // {
+  //     delay(50);
+  //     tft.fillScreen(RED); // maybe do something better....?
+  // };
 
 
   temperature.begin();

@@ -33,7 +33,6 @@ uint8_t HEATING_ELEMENT_CS = 3;
 // we were using Seeeduino Xiao for this one.
 const byte rxPin = 7;
 const byte txPin = 6;
-
 // Set up a new SoftwareSerial object
 SoftwareSerial BT(rxPin, txPin);
 
@@ -117,6 +116,34 @@ enum STATES {
   EDIT_PROFILE,
 };
 STATES state = STARTUP;
+
+enum COMMANDS {
+    NOP,
+    START,
+    STOP,
+};
+
+class Command {
+public:
+    SoftwareSerial * bt;
+    String input;
+
+    Command(SoftwareSerial *bt) : bt(bt) {}
+
+    void begin() {
+        bt->begin(9600);
+        bt->println("connected to Reflow Oven.");
+    }
+
+    COMMANDS check() {
+        if (bt->available()) {
+            input = bt->readString();
+            if (input == "start") return START;
+            if (input == "stop") return STOP;
+        }
+        return NOP;
+    }
+};
 
 class Button {
 public:
@@ -1825,6 +1852,8 @@ MainMenu menu;
 ParamScreen learningDashboard;
 LearningScreen learningPhaseScreen;
 
+Command cmd = Command(&BT);
+
 void setup() {
   // allow some time before initializing the display
   // otherwise it seems to invert the image on powerup.
@@ -1834,6 +1863,9 @@ void setup() {
   // NOTE: MAKE SURE THIS ISN'T ON WHEN USING EXTERNAL POWER SUPPLY!!!
   // program WILL hang!
   Serial.begin(9600);
+
+  // begin command listener
+  cmd.begin();
 
   // get a random voltage to randomly seed the RNG
   // pin 6 is unconnected.
@@ -1889,13 +1921,16 @@ void setup() {
 }
 
 void loop() {
+    int incomingCmd = cmd.check();
+
     switch (state) {
     case STARTUP:
+        Serial.println("Welcome to Reflow");
         render_loading_screen();
-        // state = MAIN_NOT_RUNNING;
-        // render_main_screen();
-        menu.render();
-        state = MENU;
+        state = MAIN_NOT_RUNNING;
+        render_main_screen();
+        // menu.render();
+        // state = MENU;
         break;
     case MENU:
         menu.update();
@@ -1922,7 +1957,8 @@ void loop() {
         }
         start_button.update();
         if (start_button.is_pressed()) return;
-        if (start_button.is_unpressed()) {
+        // if (start_button.is_unpressed()) {
+        if (incomingCmd == START) {
             plot.render();
             start_button.txt = "ABORT";
             state = MAIN_RUNNING;
@@ -1941,7 +1977,8 @@ void loop() {
         }
         temperature.update(); // TODO this is where PID code should go.
         temperature.plotHeatingElementIndicators(145, 395, 5);
-        if (start_button.is_unpressed()) {
+        // if (start_button.is_unpressed()) {
+        if (incomingCmd == STOP) {
             plot.render();
             start_button.txt = "START";
             state = MAIN_NOT_RUNNING;

@@ -1,5 +1,7 @@
 package com.example.reflowcontroller
 
+import android.bluetooth.BluetoothAdapter
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Button
 import androidx.compose.material.Text
@@ -18,8 +20,9 @@ import com.example.reflowcontroller.ui.theme.ReflowControllerTheme
 
 @Composable
 fun ReflowController(
+    btAdapter: BluetoothAdapter?,
     modifier: Modifier = Modifier,
-    reflowViewModel: ReflowViewModel = viewModel()
+    reflowViewModel: ReflowViewModel = ReflowViewModel(btAdapter!!),
 ) {
     val reflowUiState: ReflowUiState by reflowViewModel.uiState.collectAsState()
 
@@ -107,6 +110,6 @@ fun ConnectionStatus(
 @Composable
 fun ReflowControllerPreview() {
     ReflowControllerTheme {
-        ReflowController()
+        ReflowController(null)
     }
 }

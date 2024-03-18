@@ -1,4 +1,6 @@
-from typing import List
+import os
+import json
+from typing import List, Dict
 import asyncio
 import webbrowser
 import aiohttp
@@ -11,44 +13,58 @@ HOST = "127.0.0.1"
 PORT = 1312
 SERIAL_PORT = "/dev/ttyACM0"
 BAUD=9600
+PROFILES_FILE = 'profiles.json'
 
-serial_listener = web.AppKey("serial_listener", asyncio.Task[None])
 websockets      = web.AppKey("websockets", List[web.WebSocketResponse])
-pending_cmds    = web.AppKey("pending_cmds", List[str])
+pending_cmds    = web.AppKey("pending_cmds", asyncio.Queue)
+profiles        = web.AppKey("profiles", Dict)
 
 async def http_handler(request):
   return web.FileResponse("./index.html")
 
+async def profile_handler(request):
+  reader = await request.multipart()
+  field = await reader.next()
+
+  if field.name == 'file':
+    new_profiles = json.loads(await field.read_chunk())
+    request.app[profiles].update(new_profiles)
+    profile_json = json.dumps(request.app[profiles])
+    with open(PROFILES_FILE, 'w') as profile_fd:
+      profile_fd.write(profile_json)
+
+    return web.json_response({'message': 'profile load successful'})
+  return web.json_response({'error': 'No file provided'})
+
 async def websocket_handler(request):
-    ws = web.WebSocketResponse()
-    request.app[websockets].append(ws)
-    await ws.prepare(request)
+  ws = web.WebSocketResponse()
+  request.app[websockets].append(ws)
+  await ws.prepare(request)
 
-    async for msg in ws:
-      # TODO handle JSON messages
-        if msg.type == aiohttp.WSMsgType.TEXT:
-            if msg.data == 'close':
-                await ws.close()
-            elif msg.data == "CMD":
-                request.app[pending_cmds].append("CMD")
-            else:
-                print(msg.data)
-                await ws.send_str(msg.data + '/answer')
-        elif msg.type == aiohttp.WSMsgType.ERROR:
-            print('ws connection closed with exception %s' %
-                  ws.exception())
+  async for msg in ws:
+    if msg.type == aiohttp.WSMsgType.TEXT:
+      r = json.loads(msg.data)
+      if r["command"] == "get_profiles":
+        profiles_json = json.dumps({
+          "command": "profiles",
+          "data": request.app[profiles]
+        })
+        await ws.send_str(profiles_json)
+      else:
+        await request.app[pending_cmds].put(msg.data)
+    elif msg.type == aiohttp.WSMsgType.ERROR:
+      print('ws connection closed with exception %s' %
+            ws.exception())
 
-    print('websocket connection closed, shutting down.')
-    raise GracefulExit()
-    return ws
+  print('websocket connection closed, shutting down.')
+  raise GracefulExit()
+  return ws
 
 async def handle_serial_write(app, writer):
   while True:
-    await asyncio.sleep(0)
-    while len(app[pending_cmds]) > 0:
-      cmd = app[pending_cmds].pop(0)
-      writer.write(cmd.encode())
-      await writer.drain()
+    cmd = await app[pending_cmds].get()
+    writer.write(cmd.encode())
+    await writer.drain()
 
 async def handle_serial_read(app, reader):
   while True:
@@ -56,6 +72,17 @@ async def handle_serial_read(app, reader):
     print(str(line, 'utf-8'))
     for ws in app[websockets]:
       await ws.send_str(str(line, 'utf-8'))
+
+async def init_context(app):
+  app[pending_cmds] = asyncio.Queue()
+  if os.path.isfile(PROFILES_FILE):
+    with open('profiles.json') as json_data:
+      try:
+        app[profiles] = json.load(json_data)
+      except ValueError:
+        app[profiles] = {}
+  else:
+    app[profiles] = {}
 
 async def serial_handler(app):
   reader, writer = await open_serial_connection(url=SERIAL_PORT, baudrate=BAUD)
@@ -65,9 +92,10 @@ async def serial_handler(app):
 def init():
   app = web.Application()
   app[websockets] = []
-  app[pending_cmds] = []
+  app.on_startup.append(init_context)
   app.on_startup.append(serial_handler)
   app.add_routes([web.get('/', http_handler),
+                  web.post('/profile', profile_handler),
                   web.get('/ws', websocket_handler)])
   return app
 

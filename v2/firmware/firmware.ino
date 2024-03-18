@@ -1,18 +1,24 @@
-String command;
+#include <ArduinoJson.h>
+
+JsonDocument json; // parsed json
+String incoming;   // raw incoming message
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(9600);
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-  //delay(1000);
-  //Serial.write("COOL");
-  //Serial.write("\n");
+void handle_message() {
+  incoming = Serial.readString();// read the incoming data as string
+  deserializeJson(json, incoming);
+  String command = json["command"];
 
+  if (command == "status") {
+    Serial.println("{\"command\":\"status\",\"data\":\"connected\"}");
+  }
+}
+
+void loop() {
   while(Serial.available()) {
-    command = Serial.readString();// read the incoming data as string
-    Serial.println(command);
+    handle_message();
   }
 }

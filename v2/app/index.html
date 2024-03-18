@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title></title>
+        <meta name="author" content="coco">
+        <meta name="description" content="Reflow App">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <!-- <link href="css/style.css" rel="stylesheet"> -->
+        <style>
+         html {
+             background-color: black;
+             color: white;
+         }
+        </style>
+    </head>
+
+    <body>
+
+        <p>reflow</p>
+
+        <div>
+            <button id="serial_button">SEND SERIAL</button>
+        </div>
+
+
+        <!-- <script src="js/script.js"></script> -->
+        <script>
+         const ws = new WebSocket(
+             "ws://127.0.0.1:1312/ws",
+         );
+         ws.onopen = (event) => {
+             ws.send("TEST MSG");
+         };
+         ws.onmessage = (msg) => {
+             console.log(msg.data);
+         };
+
+         const button = document.getElementById("serial_button");
+
+         button.addEventListener("click", (event) => {
+             ws.send("CMD");
+         });
+        </script>
+    </body>
+
+</html>

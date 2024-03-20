@@ -12,12 +12,20 @@
 
         <style>
          html {
-             background-color: black;
+             background-color: #202030;
              color: white;
          }
-
          #plot {
              min-height: 80vh;
+         }
+         .plot-axis line {
+             stroke: #B8BEDD;
+         }
+         .plot-axis path {
+             stroke: #B8BEDD;
+         }
+         .plot-axis text {
+             fill: #B8BEDD;
          }
         </style>
     </head>
@@ -30,22 +38,7 @@
             <button id="start_button">start</button>
             <button id="stop_button">stop</button>
             <select name="profile" id="profiles">
-                <option value="profile 1">Profile 1</option>
-                <option value="profile 2">Profile 2</option>
-                <option value="profile 3">Profile 3</option>
             </select>
-            <!-- <form id="loadProfile" enctype="multipart/form-data" method="post" action="#">
-                 <input id="fileupload" name="profile" type="file" />
-                 <input type="submit" value="submit" id="submit" />
-                 </form> -->
-            <!-- <form action="/profile" method="post" accept-charset="utf-8"
-                 enctype="multipart/form-data">
-
-                 <label for="profile">profile</label>
-                 <input id="profile" name="profile" type="file" value=""/>
-
-                 <input type="submit" value="submit"/>
-                 </form> -->
             <input type="file" id="profileInput">
             <button onclick="loadProfile()">load profile</button>
         </div>
@@ -59,35 +52,90 @@
          profileSelect = document.getElementById("profiles")
          let selectedProfile = profiles.value;
 
-         const ws = new WebSocket(
-             "ws://127.0.0.1:1312/ws",
-         );
-         ws.onopen = () => {
-             ws.send(JSON.stringify({command: "status"}))
+         const render_profile = () => {
+             // clear old chart
+             d3.selectAll("#plot > *").remove();
 
-             // get available profiles
-             ws.send(JSON.stringify({command: "get_profiles"}))
-         }
-         ws.onmessage = (msg) => {
-             const r = JSON.parse(msg.data)
-             switch (r.command) {
-                 case 'status':
-                     document.getElementById("status").textContent = r.data
-                     break;
-                 case 'profiles':
-                     profiles = r.data
-                     let profileOptions = ''
-                     for (const [key, value] of Object.entries(profiles)) {
-                         profileOptions += `<option value="${key}">${key}</option>\n`
-                     }
-                     profileSelect.innerHTML = profileOptions
-                     profileSelect.onchange = () => {
-                         selectedProfile = profiles.value;
-                     }
-                     break;
+             size = document.getElementById("plot").getBoundingClientRect()
+             // set the dimensions and margins of the graph
+             var margin = {top: 10, right: 30, bottom: 30, left: 60},
+                 width = size.width - margin.left - margin.right,
+                 height = size.height - margin.top - margin.bottom;
+
+             let profile = profiles[selectedProfile]
+             let data_points = []
+             for (let i = 0; i < profile.length; i++) {
+                 if (i === 0) {
+                     data_points.push({time: 0, temp: profile[i].start})
+                     continue
+                 }
+                 data_points.push({
+                     time: data_points[i-1].time + profile[i-1].duration,
+                     temp: profile[i-1].end
+                 })
              }
-         };
+             data_points.push({
+                 time: data_points[data_points.length-1].time + (profile[profile.length-1].duration == -1 ? 20 : profile[profile.length-1].duration),
+                 temp: profile[profile.length-1].end
+             })
+             console.log(data_points)
 
+             /* let transformed_data = profile.map((o, i, a) => {
+              *     if (i == 0) {
+              *         return {time: 0, temp: o.start}
+              *     }
+              *     return {time: a[i-1].duration}
+              * })
+              */
+             // append the svg object to the body of the page
+             var svg = d3.select("#plot")
+                         .append("svg")
+                         .attr("width", width + margin.left + margin.right)
+                         .attr("height", height + margin.top + margin.bottom)
+                         .append("g")
+                         .attr("transform",
+                               "translate(" + margin.left + "," + margin.top + ")");
+
+             // Add X axis --> it is a date format
+             var x = d3.scaleLinear()
+                       .domain([0, d3.sum(profile, o => o.duration)])
+                       .range([ 0, width ]);
+             svg.append("g")
+                .attr("transform", "translate(0," + height + ")")
+                .attr("class", "plot-axis")
+                .call(d3.axisBottom(x).ticks(5));
+
+             // Add Y axis
+             var y = d3.scaleLinear()
+                       .domain(d3.extent(profile, o => o.end))
+                       .range([ height, 0 ]);
+             svg.append("g")
+                .attr("class", "plot-axis")
+                .call(d3.axisLeft(y));
+
+             // Draw the line
+             svg.append("path")
+                .datum(data_points)
+                .attr("class", "plot-area")
+                .attr("fill", "#423859")
+                .attr("stroke", "#423859")
+                .attr("stroke-width", 1.5)
+                .attr("d", d3.area()
+                             .x(function(d) { return x(d.time); })
+                             .y0(y(25))
+                             .y1(function(d) { return y(d.temp); })
+                )
+             svg.append("path")
+                .datum(data_points)
+                .attr("fill", "none")
+                .attr("stroke", "#515385")
+                .attr("stroke-width", 4)
+                .attr("d", d3.line()
+                             .x(function(d) { return x(d.time); })
+                             .y(function(d) { return y(d.temp); })
+                )
+
+         }
 
          async function loadProfile() {
              const fileInput = document.getElementById('profileInput');
@@ -111,6 +159,39 @@
              }
          }
 
+         const ws = new WebSocket(
+             "ws://127.0.0.1:1312/ws",
+         );
+         ws.onopen = () => {
+             ws.send(JSON.stringify({command: "status"}))
+
+             // get available profiles
+             ws.send(JSON.stringify({command: "get_profiles"}))
+         }
+         ws.onmessage = (msg) => {
+             const r = JSON.parse(msg.data)
+             switch (r.command) {
+                 case 'status':
+                     document.getElementById("status").textContent = r.data
+                     break;
+                 case 'profiles':
+                     profiles = r.data
+                     let profileOptions = ''
+                     for (const [key, value] of Object.entries(profiles)) {
+                         profileOptions += `<option value="${key}">${key}</option>\n`
+                     }
+                     profileSelect.innerHTML = profileOptions
+                     selectedProfile = profileSelect.value;
+                     render_profile();
+                     profileSelect.onchange = () => {
+                         selectedProfile = profileSelect.value;
+                         render_profile();
+                     }
+                     break;
+             }
+         };
+
+
 
 
 
@@ -123,68 +204,6 @@
                  data: "IDK",
              }));
          });
-
-
-         size = document.getElementById("plot").getBoundingClientRect()
-         // set the dimensions and margins of the graph
-         var margin = {top: 10, right: 30, bottom: 30, left: 60},
-             width = size.width - margin.left - margin.right,
-             height = size.height - margin.top - margin.bottom;
-
-         // append the svg object to the body of the page
-         var svg = d3.select("#plot")
-                     .append("svg")
-                     .attr("width", width + margin.left + margin.right)
-                     .attr("height", height + margin.top + margin.bottom)
-                     .append("g")
-                     .attr("transform",
-                           "translate(" + margin.left + "," + margin.top + ")");
-
-//Read the data
-d3.csv("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/5_OneCatSevNumOrdered.csv", function(data) {
-
-  // group the data: I want to draw one line per group
-  var sumstat = d3.nest() // nest function allows to group the calculation per level of a factor
-    .key(function(d) { return d.name;})
-    .entries(data);
-
-  // Add X axis --> it is a date format
-  var x = d3.scaleLinear()
-    .domain(d3.extent(data, function(d) { return d.year; }))
-    .range([ 0, width ]);
-  svg.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x).ticks(5));
-
-  // Add Y axis
-  var y = d3.scaleLinear()
-    .domain([0, d3.max(data, function(d) { return +d.n; })])
-    .range([ height, 0 ]);
-  svg.append("g")
-    .call(d3.axisLeft(y));
-
-  // color palette
-  var res = sumstat.map(function(d){ return d.key }) // list of group names
-  var color = d3.scaleOrdinal()
-    .domain(res)
-    .range(['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628','#f781bf','#999999'])
-
-  // Draw the line
-  svg.selectAll(".line")
-      .data(sumstat)
-      .enter()
-      .append("path")
-        .attr("fill", "none")
-        .attr("stroke", function(d){ return color(d.key) })
-        .attr("stroke-width", 1.5)
-        .attr("d", function(d){
-          return d3.line()
-            .x(function(d) { return x(d.year); })
-            .y(function(d) { return y(+d.n); })
-            (d.values)
-        })
-
-})
         </script>
     </body>
 

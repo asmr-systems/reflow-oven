@@ -34,6 +34,7 @@
 
         <p>reflow</p>
         <div id="status">disconnected</div>
+        <div id="running">not running</div>
         <div>
             <button id="start_button">start</button>
             <button id="stop_button">stop</button>
@@ -78,15 +79,7 @@
                  time: data_points[data_points.length-1].time + (profile[profile.length-1].duration == -1 ? 20 : profile[profile.length-1].duration),
                  temp: profile[profile.length-1].end
              })
-             console.log(data_points)
 
-             /* let transformed_data = profile.map((o, i, a) => {
-              *     if (i == 0) {
-              *         return {time: 0, temp: o.start}
-              *     }
-              *     return {time: a[i-1].duration}
-              * })
-              */
              // append the svg object to the body of the page
              var svg = d3.select("#plot")
                          .append("svg")
@@ -137,6 +130,30 @@
 
          }
 
+         const render_monitor_data = (temp, time) => {
+             let profile = profiles[selectedProfile]
+             size = document.getElementById("plot").getBoundingClientRect()
+             // set the dimensions and margins of the graph
+             var margin = {top: 10, right: 30, bottom: 30, left: 60},
+                 width = size.width - margin.left - margin.right,
+                 height = size.height - margin.top - margin.bottom;
+             var x = d3.scaleLinear()
+                       .domain([0, d3.sum(profile, o => o.duration)])
+                       .range([ 0, width ]);
+             var y = d3.scaleLinear()
+                       .domain(d3.extent(profile, o => o.end))
+                       .range([ height, 0 ]);
+
+             let svg = d3.select("svg").select("g")
+             svg.append("circle")
+                .data([{temp: temp, time: time}])
+                .attr("r", "2")
+                .attr("cx", function(d) { return x(d.time) })
+                .attr("cy", function(d) { return y(d.temp) })
+                .attr("fill", "white")
+                .attr("stroke", "white")
+         }
+
          async function loadProfile() {
              const fileInput = document.getElementById('profileInput');
              const file = fileInput.files[0];
@@ -174,6 +191,12 @@
                  case 'status':
                      document.getElementById("status").textContent = r.data
                      break;
+                 case 'start':
+                     document.getElementById("running").textContent = r.data == "ok" ? "running" : "not running"
+                     break;
+                 case 'stop':
+                     document.getElementById("running").textContent = r.data == "ok" ? "not running" : "running"
+                     break;
                  case 'profiles':
                      profiles = r.data
                      let profileOptions = ''
@@ -188,6 +211,10 @@
                          render_profile();
                      }
                      break;
+                 case 'monitor':
+                     render_monitor_data(r.temp, r.time)
+                 default:
+                     console.log(r)
              }
          };
 
@@ -196,12 +223,16 @@
 
 
 
-         const button = document.getElementById("start_button");
-
-         button.addEventListener("click", (event) => {
+         const start_button = document.getElementById("start_button");
+         start_button.addEventListener("click", (event) => {
              ws.send(JSON.stringify({
-                 command: "START",
-                 data: "IDK",
+                 command: "start",
+             }));
+         });
+         const stop_button = document.getElementById("stop_button");
+         stop_button.addEventListener("click", (event) => {
+             ws.send(JSON.stringify({
+                 command: "stop",
              }));
          });
         </script>

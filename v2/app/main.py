@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from typing import List, Dict
 import asyncio
 import webbrowser
@@ -15,7 +16,7 @@ SERIAL_PORT = "/dev/ttyACM0"
 BAUD=9600
 PROFILES_FILE = 'profiles.json'
 
-websockets      = web.AppKey("websockets", List[web.WebSocketResponse])
+websockets      = web.AppKey("websockets", Dict)
 pending_cmds    = web.AppKey("pending_cmds", asyncio.Queue)
 profiles        = web.AppKey("profiles", Dict)
 
@@ -38,7 +39,8 @@ async def profile_handler(request):
 
 async def websocket_handler(request):
   ws = web.WebSocketResponse()
-  request.app[websockets].append(ws)
+  id = uuid.uuid1()
+  request.app[websockets][id] = ws
   await ws.prepare(request)
 
   async for msg in ws:
@@ -50,14 +52,27 @@ async def websocket_handler(request):
           "data": request.app[profiles]
         })
         await ws.send_str(profiles_json)
+      elif r["command"] == "status":
+        await request.app[pending_cmds].put("status")
+      elif r["command"] == "start":
+        await request.app[pending_cmds].put("start")
+      elif r["command"] == "stop":
+        await request.app[pending_cmds].put("stop")
       else:
         await request.app[pending_cmds].put(msg.data)
     elif msg.type == aiohttp.WSMsgType.ERROR:
       print('ws connection closed with exception %s' %
             ws.exception())
 
-  print('websocket connection closed, shutting down.')
-  raise GracefulExit()
+  # maybe quit
+  # await ws.close()
+  del request.app[websockets][id]
+  await ws.close()
+  await asyncio.sleep(2)
+  if len(request.app[websockets]) == 0:
+    print('websocket connection closed, shutting down.')
+    raise GracefulExit()
+
   return ws
 
 async def handle_serial_write(app, writer):
@@ -69,8 +84,7 @@ async def handle_serial_write(app, writer):
 async def handle_serial_read(app, reader):
   while True:
     line = await reader.readline()
-    print(str(line, 'utf-8'))
-    for ws in app[websockets]:
+    for ws in app[websockets].values():
       await ws.send_str(str(line, 'utf-8'))
 
 async def init_context(app):
@@ -89,11 +103,16 @@ async def serial_handler(app):
   read_task = asyncio.create_task(handle_serial_write(app, writer))
   write_task = asyncio.create_task(handle_serial_read(app, reader))
 
+async def on_shutdown(app):
+    for ws in set(app[websockets].values()):
+        await ws.close(code=WSCloseCode.GOING_AWAY, message="Server shutdown")
+
 def init():
   app = web.Application()
-  app[websockets] = []
+  app[websockets] = {}
   app.on_startup.append(init_context)
   app.on_startup.append(serial_handler)
+  app.on_shutdown.append(on_shutdown)
   app.add_routes([web.get('/', http_handler),
                   web.post('/profile', profile_handler),
                   web.get('/ws', websocket_handler)])

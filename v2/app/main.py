@@ -7,14 +7,15 @@ import webbrowser
 import aiohttp
 from aiohttp import web
 from aiohttp.web_runner import GracefulExit
+from serial import SerialException
 from serial_asyncio import open_serial_connection
 
 # TODO:
 # (1) refactor start/stop command response to just be a status response that includes:
 #     {'type': 'status', 'connected': true, 'running': true}
-# (2) implement retry logic for if reflow oven is disconnected
-# (3) changing app state while app is running is deprecated apparently, so maybe think of alternative for tracking state of oven running.
-#     note: the first approach i took was to just use the serial_reader to wait for a response, but asyncio got unhappy because i had two coroutines waiting until read.
+# (2) implement retry logic for if reflow oven is disconnected: still weirdish...but a little better?
+# (3) handle the weird case when we open multiple tabs or refresh, the GracefulExit exception bubbles up and a stacktrace is printed on exit.
+# (4) erase job data on plot (js) when restarting a job
 
 HOST = "127.0.0.1"
 PORT = 1312
@@ -25,9 +26,8 @@ PROFILES_FILE = 'profiles.json'
 websockets      = web.AppKey("websockets", Dict)
 pending_cmds    = web.AppKey("pending_cmds", asyncio.Queue)
 profiles        = web.AppKey("profiles", Dict)
-serial_writer   = web.AppKey("serial_writer", None)
-serial_reader   = web.AppKey("serial_reader", None)
-oven_on        = web.AppKey("oven_on", bool)
+serial_conn     = web.AppKey("serial_conn", Dict)
+app_state       = web.AppKey("state", Dict)
 
 async def http_handler(request):
   return web.FileResponse("./index.html")
@@ -79,10 +79,18 @@ async def websocket_handler(request):
   await asyncio.sleep(2)
   if len(request.app[websockets]) == 0:
     print('websocket connection closed, shutting down.')
-    if request.app[serial_writer] != None and request.app[oven_on]:
-      request.app[serial_writer].write("stop".encode())
-      await request.app[serial_writer].drain()
-      while request.app[oven_on]:
+    if request.app[serial_conn]["writer"] != None and request.app[app_state]['oven_on']:
+
+      writer_disconnected = True
+      while writer_disconnected:
+        try:
+          request.app[serial_conn]["writer"].write("stop".encode())
+          await request.app[serial_conn]["writer"].drain()
+          writer_disconnected = False
+        except SerialException:
+          await connect_serial(app)
+
+      while request.app[app_state]['oven_on']:
         await asyncio.sleep(0.02)
     raise GracefulExit()
 
@@ -91,17 +99,32 @@ async def websocket_handler(request):
 async def handle_serial_write(app, writer):
   while True:
     cmd = await app[pending_cmds].get()
-    writer.write(cmd.encode())
-    await writer.drain()
+    try:
+      writer.write(cmd.encode())
+      await writer.drain()
+    except SerialException:
+      await connect_serial(app)
+      writer = app[serial_conn]["writer"]
+      await writer.drain()
 
 async def handle_serial_read(app, reader):
   while True:
-    line = await reader.readline()
+    not_connected = True
+    while not_connected:
+      try:
+        line = await reader.readline()
+        not_connected = False
+      except SerialException:
+        await connect_serial(app)
+        reader = app[serial_conn]["reader"]
+        await reader.readline() # to flush until next line
+    # TODO theres something about the data being messed up here after reconnection.
+    print(line)
     resp = json.loads(line)
     if resp["command"] == "start":
-      app[oven_on] = True if resp["data"] == "ok" else False
+      app[app_state]['oven_on'] = True if resp["data"] == "ok" else False
     elif resp["command"] == "stop":
-      app[oven_on] = False if resp["data"] == "ok" else True
+      app[app_state]['oven_on'] = False if resp["data"] == "ok" else True
     for ws in app[websockets].values():
       await ws.send_str(str(line, 'utf-8'))
 
@@ -116,10 +139,30 @@ async def init_context(app):
   else:
     app[profiles] = {}
 
+
+async def connect_serial(app, initial_startup=False):
+  # TODO add retry logic here
+  not_connected = True
+  reader = None
+  writer = None
+  if not initial_startup:
+    print("serial: disconnected...")
+  while not_connected:
+    try:
+      reader, writer = await open_serial_connection(url=SERIAL_PORT, baudrate=BAUD)
+      not_connected = False
+    except SerialException:
+      # try to connect every 0.5 seconds
+      print("serial: attempting to reconnect...")
+      await asyncio.sleep(0.5)
+
+  print("serial: connected")
+  app[serial_conn]["writer"] = writer
+  app[serial_conn]["reader"] = reader
+  return reader, writer
+
 async def serial_handler(app):
-  reader, writer = await open_serial_connection(url=SERIAL_PORT, baudrate=BAUD)
-  app[serial_writer] = writer
-  app[serial_reader] = reader
+  reader, writer = await connect_serial(app, initial_startup=True)
   read_task = asyncio.create_task(handle_serial_write(app, writer))
   write_task = asyncio.create_task(handle_serial_read(app, reader))
 
@@ -130,9 +173,13 @@ async def on_shutdown(app):
 def init():
   app = web.Application()
   app[websockets] = {}
-  app[serial_writer] = None
-  app[serial_reader] = None
-  app[oven_on] = True
+  app[serial_conn] = {
+    'writer': None,
+    'reader': None,
+  }
+  app[app_state] = {
+    'oven_on': False,
+  }
   app.on_startup.append(init_context)
   app.on_startup.append(serial_handler)
   app.on_shutdown.append(on_shutdown)

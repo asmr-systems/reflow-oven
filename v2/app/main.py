@@ -9,6 +9,12 @@ from aiohttp import web
 from aiohttp.web_runner import GracefulExit
 from serial_asyncio import open_serial_connection
 
+# TODO:
+# (1) refactor start/stop command response to just be a status response that includes:
+#     {'type': 'status', 'connected': true, 'running': true}
+# (2) implement retry logic for if reflow oven is disconnected
+# (3) changing app state while app is running is deprecated apparently, so maybe think of alternative for tracking state of oven running.
+#     note: the first approach i took was to just use the serial_reader to wait for a response, but asyncio got unhappy because i had two coroutines waiting until read.
 
 HOST = "127.0.0.1"
 PORT = 1312
@@ -19,6 +25,9 @@ PROFILES_FILE = 'profiles.json'
 websockets      = web.AppKey("websockets", Dict)
 pending_cmds    = web.AppKey("pending_cmds", asyncio.Queue)
 profiles        = web.AppKey("profiles", Dict)
+serial_writer   = web.AppKey("serial_writer", None)
+serial_reader   = web.AppKey("serial_reader", None)
+oven_on        = web.AppKey("oven_on", bool)
 
 async def http_handler(request):
   return web.FileResponse("./index.html")
@@ -65,12 +74,16 @@ async def websocket_handler(request):
             ws.exception())
 
   # maybe quit
-  # await ws.close()
   del request.app[websockets][id]
   await ws.close()
   await asyncio.sleep(2)
   if len(request.app[websockets]) == 0:
     print('websocket connection closed, shutting down.')
+    if request.app[serial_writer] != None and request.app[oven_on]:
+      request.app[serial_writer].write("stop".encode())
+      await request.app[serial_writer].drain()
+      while request.app[oven_on]:
+        await asyncio.sleep(0.02)
     raise GracefulExit()
 
   return ws
@@ -84,6 +97,11 @@ async def handle_serial_write(app, writer):
 async def handle_serial_read(app, reader):
   while True:
     line = await reader.readline()
+    resp = json.loads(line)
+    if resp["command"] == "start":
+      app[oven_on] = True if resp["data"] == "ok" else False
+    elif resp["command"] == "stop":
+      app[oven_on] = False if resp["data"] == "ok" else True
     for ws in app[websockets].values():
       await ws.send_str(str(line, 'utf-8'))
 
@@ -100,6 +118,8 @@ async def init_context(app):
 
 async def serial_handler(app):
   reader, writer = await open_serial_connection(url=SERIAL_PORT, baudrate=BAUD)
+  app[serial_writer] = writer
+  app[serial_reader] = reader
   read_task = asyncio.create_task(handle_serial_write(app, writer))
   write_task = asyncio.create_task(handle_serial_read(app, reader))
 
@@ -110,6 +130,9 @@ async def on_shutdown(app):
 def init():
   app = web.Application()
   app[websockets] = {}
+  app[serial_writer] = None
+  app[serial_reader] = None
+  app[oven_on] = True
   app.on_startup.append(init_context)
   app.on_startup.append(serial_handler)
   app.on_shutdown.append(on_shutdown)

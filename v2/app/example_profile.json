@@ -1,0 +1,16 @@
+{
+  "SNU": [
+    {"phase": "preheat",     "start": 25,  "end": 150, "duration": 120},
+    {"phase": "soak",        "start": 150, "end": 175, "duration": 90},
+    {"phase": "ramp",        "start": 175, "end": 217, "duration": 11},
+    {"phase": "reflow",      "start": 217, "end": 250, "duration": 4},
+    {"phase": "cooldown",    "start": 250, "end": 25,  "duration": -1}
+  ],
+  "SAC302": [
+    {"phase": "preheat",     "start": 25,  "end": 150, "duration": 30},
+    {"phase": "soak",        "start": 150, "end": 175, "duration": 90},
+    {"phase": "ramp",        "start": 175, "end": 217, "duration": 11},
+    {"phase": "reflow",      "start": 217, "end": 250, "duration": 4},
+    {"phase": "cooldown",    "start": 250, "end": 25,  "duration": 30}
+  ]
+}

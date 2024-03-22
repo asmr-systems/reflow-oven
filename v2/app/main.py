@@ -11,11 +11,25 @@ from serial import SerialException
 from serial_asyncio import open_serial_connection
 
 # TODO:
-# (1) refactor start/stop command response to just be a status response that includes:
-#     {'type': 'status', 'connected': true, 'running': true}
-# (2) implement retry logic for if reflow oven is disconnected: still weirdish...but a little better?
-# (3) handle the weird case when we open multiple tabs or refresh, the GracefulExit exception bubbles up and a stacktrace is printed on exit.
-# (4) erase job data on plot (js) when restarting a job
+# [ ] add proper logging
+# [x] refactor start/stop command response to just be a status response that includes:
+#     {'type': 'status', data: {'connected': true, 'running': true}}
+# [x] implement retry logic for if reflow oven is disconnected
+#     main reconnect cases to handle:
+#       a. disconnect and reconnect when not running, no read/write
+#       b. disconnect on read while not running
+#       c. disconnect on write while not running
+#       d. disconnect when running, no read/write
+#       e. disconnect when running, on read
+#       f. disconnect on running, on write
+#     when this happens, the app should know it is disconnected.
+#     when a reconnection happens, everything should be okay.
+#     OK: everything seems to work pretty well for reconnect. though we need the app and gui to respond correctly to disconnects.
+# [ ] when a disconnection happens, send a status messsage to the gui
+# [ ] handle the weird case when we open multiple tabs or refresh, the GracefulExit exception bubbles up and a stacktrace is printed on exit.
+# [ ] erase job data on plot (js) when restarting a job
+# [ ] make gui buttons disabled when not connected
+# [ ] ENSURE ON CLOSE LOGIC ACTUALLY STOPS OVEN
 
 HOST = "127.0.0.1"
 PORT = 1312
@@ -55,20 +69,30 @@ async def websocket_handler(request):
   async for msg in ws:
     if msg.type == aiohttp.WSMsgType.TEXT:
       r = json.loads(msg.data)
-      if r["command"] == "get_profiles":
-        profiles_json = json.dumps({
-          "command": "profiles",
-          "data": request.app[profiles]
-        })
-        await ws.send_str(profiles_json)
-      elif r["command"] == "status":
-        await request.app[pending_cmds].put("status")
-      elif r["command"] == "start":
+      print(r)
+      action = r["action"]
+      if action == "get":
+        if r["type"] == "status":
+          await request.app[pending_cmds].put("status")
+        elif r["type"] == "profiles":
+          await ws.send_str(json.dumps({
+            "action": action,
+            "type": "profiles",
+            "data": request.app[profiles]
+          }))
+        else:
+          print(f'cannot get {r["type"]}')
+      elif action == "set":
+        pass
+      elif action == "start":
         await request.app[pending_cmds].put("start")
-      elif r["command"] == "stop":
+      elif action == "pause":
+        pass
+      elif action == "stop":
         await request.app[pending_cmds].put("stop")
       else:
-        await request.app[pending_cmds].put(msg.data)
+        print(f'cannot perform {action}')
+
     elif msg.type == aiohttp.WSMsgType.ERROR:
       print('ws connection closed with exception %s' %
             ws.exception())
@@ -96,37 +120,40 @@ async def websocket_handler(request):
 
   return ws
 
+async def broadcast_to_websockets(app, msg):
+  for ws in app[websockets].values():
+      await ws.send_str(msg)
+
 async def handle_serial_write(app, writer):
   while True:
     cmd = await app[pending_cmds].get()
+    writer = app[serial_conn]["writer"]
     try:
       writer.write(cmd.encode())
       await writer.drain()
+      print(f'wrote: {cmd}')
     except SerialException:
       await connect_serial(app)
-      writer = app[serial_conn]["writer"]
-      await writer.drain()
 
 async def handle_serial_read(app, reader):
   while True:
     not_connected = True
     while not_connected:
+      reader = app[serial_conn]["reader"]
       try:
         line = await reader.readline()
         not_connected = False
       except SerialException:
         await connect_serial(app)
-        reader = app[serial_conn]["reader"]
-        await reader.readline() # to flush until next line
-    # TODO theres something about the data being messed up here after reconnection.
-    print(line)
-    resp = json.loads(line)
-    if resp["command"] == "start":
-      app[app_state]['oven_on'] = True if resp["data"] == "ok" else False
-    elif resp["command"] == "stop":
-      app[app_state]['oven_on'] = False if resp["data"] == "ok" else True
-    for ws in app[websockets].values():
-      await ws.send_str(str(line, 'utf-8'))
+
+    # TODO i don't think we need to track status on backend...
+    # print(line)
+    # resp = json.loads(line)
+    # if resp["action"] == "start":
+    #   app[app_state]['oven_on'] = True if resp["data"] == "ok" else False
+    # elif resp["command"] == "stop":
+    #   app[app_state]['oven_on'] = False if resp["data"] == "ok" else True
+    await broadcast_to_websockets(app, str(line, 'utf-8'))
 
 async def init_context(app):
   app[pending_cmds] = asyncio.Queue()
@@ -147,6 +174,11 @@ async def connect_serial(app, initial_startup=False):
   writer = None
   if not initial_startup:
     print("serial: disconnected...")
+    await broadcast_to_websockets(app, json.dumps({
+            "action": "get",
+            "type": "status",
+            "data": {"connected": False, "running": False}
+    }))
   while not_connected:
     try:
       reader, writer = await open_serial_connection(url=SERIAL_PORT, baudrate=BAUD)
@@ -159,6 +191,8 @@ async def connect_serial(app, initial_startup=False):
   print("serial: connected")
   app[serial_conn]["writer"] = writer
   app[serial_conn]["reader"] = reader
+  # query mcu for status
+  await app[pending_cmds].put("status")
   return reader, writer
 
 async def serial_handler(app):

@@ -1,4 +1,5 @@
 #include <ArduinoJson.h>
+#include "clock.h"
 
 JsonDocument json; // parsed json
 String incoming;   // raw incoming message

@@ -147,11 +147,12 @@
              let svg = d3.select("svg").select("g")
              svg.append("circle")
                 .data([{temp: temp, time: time}])
+                .attr("class", "oven-data")
                 .attr("r", "2")
                 .attr("cx", function(d) { return x(d.time) })
                 .attr("cy", function(d) { return y(d.temp) })
-                .attr("fill", "white")
-                .attr("stroke", "white")
+                .attr("fill", "#f0f716")
+                .attr("stroke", "#f0f716")
          }
 
          async function loadProfile() {
@@ -225,6 +226,7 @@
          const start_button = document.getElementById("start_button");
          start_button.addEventListener("click", (event) => {
              startJob(ws)
+             d3.selectAll(".oven-data").remove();
          });
          const stop_button = document.getElementById("stop_button");
          stop_button.addEventListener("click", (event) => {

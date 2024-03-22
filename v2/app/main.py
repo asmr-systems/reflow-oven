@@ -25,9 +25,10 @@ from serial_asyncio import open_serial_connection
 #     when this happens, the app should know it is disconnected.
 #     when a reconnection happens, everything should be okay.
 #     OK: everything seems to work pretty well for reconnect. though we need the app and gui to respond correctly to disconnects.
-# [ ] when a disconnection happens, send a status messsage to the gui
+# [x] when a disconnection happens, send a status messsage to the gui
+# [ ] add way to select connected usb device
 # [ ] handle the weird case when we open multiple tabs or refresh, the GracefulExit exception bubbles up and a stacktrace is printed on exit.
-# [ ] erase job data on plot (js) when restarting a job
+# [x] erase job data on plot (js) when restarting a job
 # [ ] make gui buttons disabled when not connected
 # [ ] ENSURE ON CLOSE LOGIC ACTUALLY STOPS OVEN
 

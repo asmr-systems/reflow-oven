@@ -1,35 +1,38 @@
 #include "state.h"
 #include "pid.h"
 #include "comms.h"
+#include "driver.h"
 
-State state;
-Comms comms;
-PID   pid;
+const int THERMISTOR_CS_PIN = 0;
+const int DRIVER_PIN        = 1;
 
+State  state;
+Comms  comms;
+PID    pid;
+Driver driver;
 
-unsigned long start_millis_monitoring;
 
 void setup() {
-    state = State();
-    comms = Comms(*state);
-    pid   = PID();
+    state  = State(THERMISTOR_CS_PIN);
+    comms  = Comms(*state);
+    pid    = PID();
+    driver = Driver(DRIVER_PIN);
 
+    state.begin();
     comms.begin();
-    start_millis_monitoring = millis();
 }
 
 void loop() {
+    state.record_temp();
+
     comms.handle_incoming_messages();
 
-    if (state.running) {
+    // return early if we aint running this jawn
+    if (!state.running) return;
 
-        if (millis() - start_millis_monitoring > 100) {
-            start_millis_monitoring = millis();
+    double duty_cycle = pid.update();
 
-            state.data.temp = 160.6;
-            state.data.time = (start_millis_monitoring - state.start_ms)/1000.0;
+    driver.update(duty_cycle);
 
-            comms.send_temperature();
-        }
-    }
+    comms.send_temperature();
 }

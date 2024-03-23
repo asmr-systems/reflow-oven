@@ -8,9 +8,10 @@ class Comms {
 public:
     int baud;
     State* state;
+    int temp_update_ms;
 
-    Comms(State* state, int baud = 9600)
-        : state(state), baud(baud) {}
+    Comms(State* state, int temp_update_ms = 100, int baud = 9600)
+        : state(state), temp_update_ms(temp_update_ms), baud(baud) {}
 
     void begin() {
         Serial.begin(baud);
@@ -27,6 +28,10 @@ public:
     }
 
     void send_temperature() {
+        static int ping_start = 0;
+        if (millis() - ping_start < temp_update_ms) return;
+        ping_start = millis();
+
         Serial.print("{\"action\":\"get\",");
         Serial.print("\"type\":\"temp\",\"data\":{\"temp\":");
         Serial.print(state->data.temp);

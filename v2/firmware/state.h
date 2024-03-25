@@ -24,12 +24,12 @@ public:
     }
 
     void record_temp() {
-        therm.read();
-        this.data.temp = therm.getTemperature();
-        if (this.running) {
-            this.data.time = (start_ms - millis())/1000.0;
+        thermocouple.read();
+        this->data.temp = thermocouple.getTemperature();
+        if (this->running) {
+            this->data.time = (start_ms - millis())/1000.0;
         } else {
-            this.data.time = 0;
+            this->data.time = 0;
         }
     }
 

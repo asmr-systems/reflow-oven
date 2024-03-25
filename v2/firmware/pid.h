@@ -8,6 +8,7 @@ public:
     double Ki = 0;
     double Kd = 0;
 
+    PID() {}
     PID(double Kp, double Ki, double Kd)
         : Kp(Kp), Ki(Ki), Kd(Kd) {}
 

@@ -34,7 +34,7 @@ from serial_asyncio import open_serial_connection
 
 HOST = "127.0.0.1"
 PORT = 1312
-SERIAL_PORT = "/dev/ttyACM0"
+SERIAL_PORT = "/dev/ttyUSB1" # "/dev/ttyACM0"
 BAUD=9600
 PROFILES_FILE = 'profiles.json'
 

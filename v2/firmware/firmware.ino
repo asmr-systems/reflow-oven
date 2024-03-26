@@ -4,8 +4,8 @@
 #include "driver.h"
 #include "nvm.h"
 
-const int THERMISTOR_CS_PIN = 0;
-const int DRIVER_PIN        = 1;
+const int THERMISTOR_CS_PIN = 3;
+const int DRIVER_PIN        = 4;
 
 State  state = State(THERMISTOR_CS_PIN);
 Comms  comms = Comms(&state);
@@ -22,6 +22,8 @@ void loop() {
     state.record_temp();
 
     comms.handle_incoming_messages();
+
+    comms.send_temperature(); // DEBUG
 
     // return early if we aint running this jawn
     if (!state.running) return;

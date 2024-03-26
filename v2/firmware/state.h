@@ -4,7 +4,6 @@
 #include <SPI.h>
 #include "MAX6675.h"
 
-
 class State {
 public:
     bool          running = false;
@@ -15,19 +14,24 @@ public:
     } data;
 
     State(int therm_cs_pin)
-        : therm_cs_pin(therm_cs_pin) {}
+        : therm_cs_pin(therm_cs_pin), thermocouple(MAX6675(therm_cs_pin, &SPI)) {}
 
     void begin() {
         pinMode(therm_cs_pin, OUTPUT);
         SPI.begin();
-        thermocouple.begin(therm_cs_pin);
+        thermocouple.begin();
     }
 
     void record_temp() {
-        thermocouple.read();
+        // MAX6675 needs 250ms between reads.
+        static int last_read_ms = 0;
+        if (millis() - last_read_ms < 250) return;
+        last_read_ms = millis();
+
+        int status = thermocouple.read();
         this->data.temp = thermocouple.getTemperature();
         if (this->running) {
-            this->data.time = (start_ms - millis())/1000.0;
+            this->data.time = (double)(millis() - start_ms)/1000.0;
         } else {
             this->data.time = 0;
         }

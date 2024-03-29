@@ -20,6 +20,18 @@ public:
     void send_status() {
         Serial.print("{\"action\":\"get\",\"type\":\"status\",\"data\":{\"connected\":true,\"running\":");
         if (state->running) {
+            Serial.print("true,");
+        } else {
+            Serial.print("false,");
+        }
+        Serial.print("\"learning\":");
+        if (state->learning) {
+            Serial.print("true,");
+        } else {
+            Serial.print("false,");
+        }
+        Serial.print("\"testing\":");
+        if (state->testing) {
             Serial.print("true");
         } else {
             Serial.print("false");
@@ -51,6 +63,8 @@ public:
 
             if (incoming == "start") {
                 state->running = true;
+                state->learning = false;
+                state->testing = false;
                 state->start_ms = millis();
                 send_status();
                 return;
@@ -58,10 +72,27 @@ public:
 
             if (incoming == "stop") {
                 state->running = false;
+                state->learning = false;
+                state->testing = false;
                 send_status();
                 return;
             }
 
+            if (incoming == "learn") {
+                state->running = false;
+                state->learning = true;
+                state->testing = false;
+                send_status();
+                return;
+            }
+
+            if (incoming == "test") {
+                state->running = false;
+                state->learning = false;
+                state->testing = true;
+                send_status();
+                return;
+            }
 
             // this is when we load profiles
             deserializeJson(json, incoming);

@@ -91,6 +91,10 @@ async def websocket_handler(request):
         pass
       elif action == "stop":
         await request.app[pending_cmds].put("stop")
+      elif action == "learn":
+        await request.app[pending_cmds].put("learn")
+      elif action == "test":
+        await request.app[pending_cmds].put("test")
       else:
         print(f'cannot perform {action}')
 
@@ -123,7 +127,7 @@ async def websocket_handler(request):
 
 async def broadcast_to_websockets(app, msg):
   for ws in app[websockets].values():
-      await ws.send_str(msg)
+    await ws.send_str(msg)
 
 async def handle_serial_write(app, writer):
   while True:

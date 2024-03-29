@@ -6,7 +6,9 @@
 
 class State {
 public:
-    bool          running = false;
+    bool          running  = false;
+    bool          learning = false;
+    bool          testing  = false;
     unsigned long start_ms = 0;
     struct {
         double    temp = 0; // C
@@ -24,7 +26,7 @@ public:
 
     void record_temp() {
         // MAX6675 needs 250ms between reads.
-        static int last_read_ms = 0;
+        static unsigned long last_read_ms = 0;
         if (millis() - last_read_ms < 250) return;
         last_read_ms = millis();
 

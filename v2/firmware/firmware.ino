@@ -26,13 +26,26 @@ void loop() {
     comms.send_temperature(); // DEBUG
 
     // return early if we aint running this jawn
-    if (!state.running) return;
+    if (state.running) {
+        double set_point = 100;
 
-    double set_point = 100;
+        double duty_cycle = pid.update(set_point, state.data.temp);
 
-    double duty_cycle = pid.update(set_point, state.data.temp);
+        driver.update(duty_cycle);
 
-    driver.update(duty_cycle);
+        comms.send_temperature();
+    }
 
-    comms.send_temperature();
+    if (state.learning) {
+        // learn dC/dt
+
+        // learn maintain power
+
+
+    }
+
+    if (state.testing) {
+
+    }
+
 }

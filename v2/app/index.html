@@ -34,7 +34,8 @@
 
         <p>reflow</p>
         <div id="status">disconnected</div>
-        <div id="running">not running</div>
+        <div id="active-mode">idle</div>
+        <div id="temp-dro"></div>
         <div>
             <button id="start_button">start</button>
             <button id="stop_button">stop</button>
@@ -42,6 +43,8 @@
             </select>
             <input type="file" id="profileInput">
             <button onclick="loadProfile()">load profile</button>
+            <button id="learn_button">learn</button>
+            <button id="test_button">test</button>
         </div>
 
         <!-- Create a div where the graph will take place -->
@@ -52,8 +55,10 @@
          let profiles = {}
          profileSelect = document.getElementById("profiles")
          let selectedProfile = profiles.value;
+         let activeMode = 'idle'
+         let timeseries_data = []
 
-         const render_profile = () => {
+         const render_profile = (xMaxOverride=0) => {
              // clear old chart
              d3.selectAll("#plot > *").remove();
 
@@ -91,7 +96,7 @@
 
              // Add X axis --> it is a date format
              var x = d3.scaleLinear()
-                       .domain([0, d3.sum(profile, o => o.duration)])
+                       .domain([0, d3.max([d3.sum(profile, o => o.duration), xMaxOverride])])
                        .range([ 0, width ]);
              svg.append("g")
                 .attr("transform", "translate(0," + height + ")")
@@ -100,7 +105,7 @@
 
              // Add Y axis
              var y = d3.scaleLinear()
-                       .domain(d3.extent(profile, o => o.end))
+                       .domain([0, d3.max(profile, o => o.end)])
                        .range([ height, 0 ]);
              svg.append("g")
                 .attr("class", "plot-axis")
@@ -115,11 +120,15 @@
                 .attr("stroke-width", 1.5)
                 .attr("d", d3.area()
                              .x(function(d) { return x(d.time); })
-                             .y0(y(25))
+                             .y0(y(0))
                              .y1(function(d) { return y(d.temp); })
                 )
              svg.append("path")
-                .datum(data_points)
+                .datum([
+                    {time: 0, temp: 0},
+                    ...data_points,
+                    {time: data_points[data_points.length-1].time, temp: 0}
+                ])
                 .attr("fill", "none")
                 .attr("stroke", "#515385")
                 .attr("stroke-width", 4)
@@ -130,29 +139,32 @@
 
          }
 
-         const render_monitor_data = (temp, time) => {
+         const render_monitor_data = (data) => {
              let profile = profiles[selectedProfile]
              size = document.getElementById("plot").getBoundingClientRect()
              // set the dimensions and margins of the graph
              var margin = {top: 10, right: 30, bottom: 30, left: 60},
                  width = size.width - margin.left - margin.right,
                  height = size.height - margin.top - margin.bottom;
+
+             let xMaxOverride = data[data.length-1].time
              var x = d3.scaleLinear()
-                       .domain([0, d3.sum(profile, o => o.duration)])
+                       .domain([0, d3.max([d3.sum(profile, o => o.duration), xMaxOverride])])
                        .range([ 0, width ]);
              var y = d3.scaleLinear()
-                       .domain(d3.extent(profile, o => o.end))
+                       .domain([0, d3.max(profile, o => o.end)])
                        .range([ height, 0 ]);
 
              let svg = d3.select("svg").select("g")
+             // TODO: this doesn't seem to work when i pass a full array, only a single element
              svg.append("circle")
-                .data([{temp: temp, time: time}])
-                .attr("class", "oven-data")
-                .attr("r", "2")
-                .attr("cx", function(d) { return x(d.time) })
-                .attr("cy", function(d) { return y(d.temp) })
-                .attr("fill", "#f0f716")
-                .attr("stroke", "#f0f716")
+                         .data(data)
+                         .attr("class", "oven-data")
+                         .attr("r", "2")
+                         .attr("cx", function(d) { return x(d.time) })
+                         .attr("cy", function(d) { return y(d.temp) })
+                         .attr("fill", "#f0f716")
+                         .attr("stroke", "#f0f716")
          }
 
          async function loadProfile() {
@@ -185,6 +197,8 @@
          const startJob    = (ws) => {send(ws, {action: "start", type: "job"})}
          const pauseJob    = (ws) => {send(ws, {action: "pause", type: "job"})}
          const stopJob     = (ws) => {send(ws, {action: "stop", type: "job"})}
+         const learn       = (ws) => {send(ws, {action: "learn", type: "parameters"})}
+         const test_oven   = (ws) => {send(ws, {action: "test", type: "parameters"})}
 
          const ws = new WebSocket(
              "ws://127.0.0.1:1312/ws",
@@ -198,7 +212,11 @@
              switch (resp.type) {
                  case 'status':
                      document.getElementById("status").textContent = resp.data.connected ? "connected" : "disconnected"
-                     document.getElementById("running").textContent = resp.data.running ? "running" : "not running"
+                     if (resp.data.running) { activeMode = 'running' }
+                     if (resp.data.learning) { activeMode = 'learning' }
+                     if (resp.data.testing) { activeMode = 'testing' }
+                     if (!(resp.data.running | resp.data.learning | resp.data.testing)) { activeMode = 'idle' }
+                     document.getElementById("active-mode").textContent = activeMode
                      break;
                  case 'profiles':
                      profiles = resp.data
@@ -216,7 +234,24 @@
                      }
                      break;
                  case 'temp':
-                     render_monitor_data(resp.data.temp, resp.data.time)
+                     document.getElementById("temp-dro").textContent = `${resp.data.temp} C`
+                     if (activeMode === 'idle') {
+                         render_monitor_data([resp.data])
+                     }
+                     else {
+                         if (timeseries_data.length === 0) {
+                             timeseries_data.push(resp.data)
+                         } else if (resp.data.time !== timeseries_data[timeseries_data.length-1].time) {
+                             timeseries_data.push(resp.data)
+                         }
+                         /* if (timeseries_data.length > 0 && resp.data.time !== timeseries_data[timeseries_data.length-1].time) {
+
+                          * } */
+
+                         render_profile(xMaxOverride=resp.data.time)
+                         /* render_monitor_data(timeseries_data) */
+                         render_monitor_data([resp.data])
+                     }
                  default:
                      console.log(resp)
              }
@@ -226,11 +261,20 @@
          const start_button = document.getElementById("start_button");
          start_button.addEventListener("click", (event) => {
              startJob(ws)
+             timeseries_data = []
              d3.selectAll(".oven-data").remove();
          });
          const stop_button = document.getElementById("stop_button");
          stop_button.addEventListener("click", (event) => {
              stopJob(ws)
+         });
+         const learn_button = document.getElementById("learn_button");
+         learn_button.addEventListener("click", (event) => {
+             learn(ws)
+         });
+         const test_button = document.getElementById("test_button");
+         test_button.addEventListener("click", (event) => {
+             test_oven(ws)
          });
         </script>
     </body>

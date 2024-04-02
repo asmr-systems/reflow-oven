@@ -218,6 +218,7 @@
                      if (resp.data.learning) { activeMode = 'learning' }
                      if (resp.data.testing) { activeMode = 'testing' }
                      if (!(resp.data.running | resp.data.learning | resp.data.testing)) { activeMode = 'idle' }
+
                      document.getElementById("active-mode").textContent = activeMode
                      break;
                  case 'profiles':

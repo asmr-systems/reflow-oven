@@ -39,23 +39,23 @@ public:
         Serial.print("\"phase\":");
         if (state->learning) {
             if (state->learning_phase == LearningPhase::MaxRamp) {
-                Serial.print("max-ramp");
+                Serial.print("\"max-ramp\"");
             } else if (state->learning_phase == LearningPhase::Maintainence) {
-                Serial.print("maintainence");
+                Serial.print("\"maintainence\"");
             } else if (state->learning_phase == LearningPhase::Cooldown) {
-                Serial.print("cooldown");
+                Serial.print("\"cooldown\"");
             }
         } else if (state->running) {
             // TODO maybe put reflow phase
-            Serial.print("running");
+            Serial.print("\"running\"");
         } else {
-            Serial.print("none");
+            Serial.print("\"none\"");
         }
         Serial.println("}}");
     }
 
     void send_temperature() {
-        static int ping_start = 0;
+        static unsigned long ping_start = 0;
         if (millis() - ping_start < temp_update_ms) return;
         ping_start = millis();
 
@@ -80,6 +80,7 @@ public:
                 state->running = true;
                 state->learning = false;
                 state->testing = false;
+                state->driver->enable();
                 state->start_ms = millis();
                 send_status();
                 return;
@@ -89,6 +90,7 @@ public:
                 state->running = false;
                 state->learning = false;
                 state->testing = false;
+                state->driver->disable();
                 send_status();
                 return;
             }
@@ -103,6 +105,7 @@ public:
                 state->running = false;
                 state->learning = false;
                 state->testing = true;
+                state->driver->enable();
                 send_status();
                 return;
             }

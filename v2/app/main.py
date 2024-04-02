@@ -1,5 +1,6 @@
 import os
 import json
+from json import JSONDecodeError
 import uuid
 from typing import List, Dict
 import asyncio
@@ -129,6 +130,26 @@ async def broadcast_to_websockets(app, msg):
   for ws in app[websockets].values():
     await ws.send_str(msg)
 
+async def process_rx(app, msg):
+  try:
+    d = json.loads(msg)
+  except JSONDecodeError:
+    # just skip for now
+    return
+
+  # change tracked status
+  if d["type"] == "status":
+    if d["data"]["learning"]:
+      if d["data"]["phase"] == "max-ramp":
+        app[app_state]['learning_max_ramp'] = True
+    else:
+      app[app_state]['learning_max_ramp'] = False
+
+  if d["type"] == "temp":
+    if app[app_state]['learning_max_ramp']:
+      app[app_state]['temp_data'].append(d["data"])
+
+
 async def handle_serial_write(app, writer):
   while True:
     cmd = await app[pending_cmds].get()
@@ -154,15 +175,10 @@ async def handle_serial_read(app, reader):
         # not really sure what to do about this.
         pass
 
-    # TODO i don't think we need to track status on backend...
-    # print(line)
-    # resp = json.loads(line)
-    # if resp["action"] == "start":
-    #   app[app_state]['oven_on'] = True if resp["data"] == "ok" else False
-    # elif resp["command"] == "stop":
-    #   app[app_state]['oven_on'] = False if resp["data"] == "ok" else True
     try:
-      await broadcast_to_websockets(app, str(line, 'utf-8'))
+      msg = str(line, 'utf-8')
+      await process_rx(app, msg)
+      await broadcast_to_websockets(app, msg)
     except UnicodeDecodeError:
       # similarly, not totally sure how to handle this
       pass
@@ -225,6 +241,8 @@ def init():
   }
   app[app_state] = {
     'oven_on': False,
+    'learning_max_ramp': False,
+    'temp_data': [],
   }
   app.on_startup.append(init_context)
   app.on_startup.append(serial_handler)

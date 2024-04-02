@@ -150,6 +150,9 @@ async def handle_serial_read(app, reader):
         not_connected = False
       except SerialException:
         await connect_serial(app)
+      except ValueError:
+        # not really sure what to do about this.
+        pass
 
     # TODO i don't think we need to track status on backend...
     # print(line)
@@ -158,7 +161,11 @@ async def handle_serial_read(app, reader):
     #   app[app_state]['oven_on'] = True if resp["data"] == "ok" else False
     # elif resp["command"] == "stop":
     #   app[app_state]['oven_on'] = False if resp["data"] == "ok" else True
-    await broadcast_to_websockets(app, str(line, 'utf-8'))
+    try:
+      await broadcast_to_websockets(app, str(line, 'utf-8'))
+    except UnicodeDecodeError:
+      # similarly, not totally sure how to handle this
+      pass
 
 async def init_context(app):
   app[pending_cmds] = asyncio.Queue()

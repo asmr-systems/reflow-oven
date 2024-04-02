@@ -38,9 +38,14 @@ void loop() {
 
     if (state.learning) {
         // learn dC/dt
+        if (state.learning_phase == LearningPhase::MaxRamp) {
+            if (state.data.temp >= State::MaxTemp) {
+                state.learning_phase = LearningPhase::Cooldown;
+                comms.send_status();
+            }
+        }
 
         // learn maintain power
-
 
     }
 

@@ -32,9 +32,24 @@ public:
         }
         Serial.print("\"testing\":");
         if (state->testing) {
-            Serial.print("true");
+            Serial.print("true,");
         } else {
-            Serial.print("false");
+            Serial.print("false,");
+        }
+        Serial.print("\"phase\":");
+        if (state->learning) {
+            if (state->learning_phase == LearningPhase::MaxRamp) {
+                Serial.print("max-ramp");
+            } else if (state->learning_phase == LearningPhase::Maintainence) {
+                Serial.print("maintainence");
+            } else if (state->learning_phase == LearningPhase::Cooldown) {
+                Serial.print("cooldown");
+            }
+        } else if (state->running) {
+            // TODO maybe put reflow phase
+            Serial.print("running");
+        } else {
+            Serial.print("none");
         }
         Serial.println("}}");
     }
@@ -79,9 +94,7 @@ public:
             }
 
             if (incoming == "learn") {
-                state->running = false;
-                state->learning = true;
-                state->testing = false;
+                state->begin_learning();
                 send_status();
                 return;
             }

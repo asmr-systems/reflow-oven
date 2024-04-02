@@ -4,8 +4,16 @@
 #include <SPI.h>
 #include "MAX6675.h"
 
+enum class LearningPhase {
+    MaxRamp,
+    Maintainence,
+    Cooldown,
+};
+
 class State {
 public:
+    static constexpr uint16_t MaxTemp = 260;
+
     bool          running  = false;
     bool          learning = false;
     bool          testing  = false;
@@ -14,6 +22,7 @@ public:
         double    temp = 0; // C
         double    time = 0; // s
     } data;
+    LearningPhase learning_phase = LearningPhase::MaxRamp;
 
     State(int therm_cs_pin)
         : therm_cs_pin(therm_cs_pin), thermocouple(MAX6675(therm_cs_pin, &SPI)) {}
@@ -32,13 +41,19 @@ public:
 
         int status = thermocouple.read();
         this->data.temp = thermocouple.getTemperature();
-        if (this->running) {
+        if (this->running || (this->learning && this.learning_phase != LearningPhase::Wait)) {
             this->data.time = (double)(millis() - start_ms)/1000.0;
         } else {
             this->data.time = 0;
         }
     }
 
+    void begin_learning() {
+        this->running = false;
+        this->learning = true;
+        this->testing = false;
+        this->learning_phase = LearningPhase::MaxRamp;
+    }
 private:
     int therm_cs_pin;
     MAX6675 thermocouple;

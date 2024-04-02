@@ -155,10 +155,12 @@
                        .domain([0, d3.max(profile, o => o.end)])
                        .range([ height, 0 ]);
 
-             let svg = d3.select("svg").select("g")
-             // TODO: this doesn't seem to work when i pass a full array, only a single element
-             svg.append("circle")
+             d3.selectAll(".datapoints").remove();
+             let svg = d3.select("svg").select("g").append("g").attr("class", "datapoints")
+             svg.selectAll(".circle")
                          .data(data)
+                         .enter()
+                         .append("circle")
                          .attr("class", "oven-data")
                          .attr("r", "2")
                          .attr("cx", function(d) { return x(d.time) })
@@ -237,6 +239,7 @@
                      document.getElementById("temp-dro").textContent = `${resp.data.temp} C`
                      if (activeMode === 'idle') {
                          render_monitor_data([resp.data])
+                         console.log("IDLE")
                      }
                      else {
                          if (timeseries_data.length === 0) {
@@ -249,9 +252,11 @@
                           * } */
 
                          render_profile(xMaxOverride=resp.data.time)
-                         /* render_monitor_data(timeseries_data) */
-                         render_monitor_data([resp.data])
+                         render_monitor_data(timeseries_data)
+                         /* render_monitor_data([resp.data]) */
+                         console.log("NON IDLE")
                      }
+                     break;
                  default:
                      console.log(resp)
              }

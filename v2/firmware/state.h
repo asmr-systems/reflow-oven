@@ -15,7 +15,7 @@ enum class LearningPhase {
 
 class State {
 public:
-    static constexpr uint16_t MaxTemp          = 120; // 260
+    static constexpr uint16_t MaxTemp          = 260;
     static constexpr uint16_t MaintainenceTemp = 120;
 
     Driver* driver;

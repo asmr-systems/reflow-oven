@@ -105,7 +105,7 @@
 
              // Add Y axis
              var y = d3.scaleLinear()
-                       .domain([0, d3.max(profile, o => o.end)])
+                       .domain([0, d3.max(profile, o => o.end) + 20])
                        .range([ height, 0 ]);
              svg.append("g")
                 .attr("class", "plot-axis")
@@ -152,7 +152,7 @@
                        .domain([0, d3.max([d3.sum(profile, o => o.duration), xMaxOverride])])
                        .range([ 0, width ]);
              var y = d3.scaleLinear()
-                       .domain([0, d3.max(profile, o => o.end)])
+                       .domain([0, d3.max(profile, o => o.end) + 20])
                        .range([ height, 0 ]);
 
              d3.selectAll(".datapoints").remove();

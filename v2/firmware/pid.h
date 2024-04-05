@@ -8,12 +8,14 @@ public:
     double Ki = 0;
     double Kd = 0;
 
+    int dt = 100; // ms
+
     PID() {}
     PID(double Kp, double Ki, double Kd)
         : Kp(Kp), Ki(Ki), Kd(Kd) {}
 
     // outputs new duty cycle for powering heating elements
-    double update(double set_point, double current_temp, int dt = 100) {
+    double setpoint(double set_point, double current_temp) {
         // dt is in milliseconds.
         static double output       = 100;
         static int    start_time   = 0;
@@ -46,7 +48,14 @@ public:
         return constrain(output, 0, 100);
     }
 
-    void learn() {}
+    double setrate(double set_rate, double current_temp) {
+        // TODO return somethign real
+        return 0;
+    }
+
+    void learn() {
+        // TODO learn
+    }
 };
 
 #endif

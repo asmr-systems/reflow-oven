@@ -71,6 +71,7 @@ public:
         while (Serial.available()) {
             String incoming = Serial.readString();
 
+
             if (incoming == "status") {
                 send_status();
                 return;

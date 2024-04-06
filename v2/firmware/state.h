@@ -13,6 +13,13 @@
 //     Cooldown,
 // };
 
+enum class TuningStage {
+    All,
+    SteadyState,
+    Velocity,
+    Inertia,
+}
+
 enum class ControlState {
     Idle,
     Tuning,
@@ -28,10 +35,11 @@ enum class ControlMode {
 class State {
 public:
     static constexpr uint16_t MaxTemp          = 260;
-    static constexpr uint16_t MaintainenceTemp = 120;
+    static constexpr uint16_t SteadyStateTemp  = 120;
 
-    ControlState control = ControlState::Idle;
-    ControlMode  mode    = ControlMode::SetPoint;
+    ControlState control      = ControlState::Idle;
+    ControlMode  mode         = ControlMode::SetPoint;
+    TuningPhase  tuning_phase = TuningPhase::All;
 
     struct {
         double           temp = 0; // C
@@ -39,13 +47,11 @@ public:
     } data;
 
     struct {
-        double    point      = 25; // C
-        double    rate       = 0;  // C/s
-        uint8_t   duty_cycle = 0;  // [0, 100]
+        double      point        = 25; // C
+        double      rate         = 0;  // C/s
+        uint8_t     duty_cycle   = 0;  // [0, 100]
+        TuningPhase tuning_phase = TuningPhase::All;
     } requested;
-
-
-    LearningPhase learning_phase = LearningPhase::MaxRamp;
 
     State(int therm_cs_pin, Driver* driver)
         : therm_cs_pin(therm_cs_pin), thermocouple(MAX6675(therm_cs_pin, &SPI)) {}

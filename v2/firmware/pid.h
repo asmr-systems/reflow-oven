@@ -1,6 +1,12 @@
 #ifndef REFLOW_PID_H
 #define REFLOW_PID_H
 
+#include "state.h"
+
+struct TuningResult {
+    bool    done       = false;
+    uint8_t duty_cycle = 0;
+};
 
 class PID {
 public:
@@ -53,8 +59,40 @@ public:
         return 0;
     }
 
-    void learn() {
-        // TODO learn
+    TuningResult tune(TuningPhase phase, double temp, unsigned long time) {
+        if (phase == TuningPhase::SteadyState)
+            return this->tune_steadystate(temp, time);
+        if (phase == TuningPhase::Velocity)
+            return this->tune_velocity(temp, time);
+        if (phase == TuningPhase::Inertia)
+            return this->tune_inertia(temp, time);
+    }
+private:
+    TuningResult tune_steadystate(double temp, unsigned long time) {
+        bool done = false;
+        uint8_t duty_cycle = 0;
+
+        // TODO fill me in
+
+        return {done, duty_cycle};
+    }
+
+    TuningResult tune_velocity(double temp, unsigned long time) {
+        bool done = false;
+        uint8_t duty_cycle = 0;
+
+        // TODO fill me in
+
+        return {done, duty_cycle};
+    }
+
+    TuningResult tune_inertia(double temp, unsigned long time) {
+        bool done = false;
+        uint8_t duty_cycle = 0;
+
+        // TODO fill me in
+
+        return {done, duty_cycle};
     }
 };
 

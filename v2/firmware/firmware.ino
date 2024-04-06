@@ -61,7 +61,6 @@ void loop() {
 
     comms.send_temperature();
 
-
     if (!state.heating_enabled) {
         driver.off();
         return;
@@ -74,7 +73,18 @@ void loop() {
     }
 
     if (state.control == ControlState::Tuning) {
-        // TODO do tuning stuff
+        TuningResult result = pid.tune(state.tuning_phase, state.data.temp, state.data.time);
+        driver.set(result.duty_cycle);
+        bool advance = result.done && state.requested.tuning_phase == TuningPhase::All;
+
+        if (advance) {
+            if (state.tuning_phase == TuningPhase::SteadyState)
+                state.tuning_phase = TuningPhase::Velocity;
+            if (state.tuning_phase == TuningPhase::Velocity)
+                state.tuning_phase = TuningPhase::Inertia;
+            if (state.tuning_phase == TuningPhase::Inertia)
+                state.control = ControlState::Idle;
+        }
     }
 
     if (state.control == ControlState::Running) {

@@ -10,6 +10,22 @@ public:
     State* state;
     int temp_update_ms;
 
+    enum class Command {
+        Status          = 0x00,
+        Info            = 0x01,
+        Disable         = 0x10,
+        Enable          = 0x11,
+        Idle            = 0x12,
+        SetTemp         = 0x20,
+        SetTempSlope    = 0x21,
+        SetDutyCycle    = 0x22,
+        TuneAll         = 0x30,
+        TuneSteadyState = 0x31,
+        TuneVelocity    = 0x32,
+        TuneInertia     = 0x33,
+        SetData         = 0x40,
+    };
+
     Comms(State* state, int temp_update_ms = 100, int baud = 9600)
         : state(state), temp_update_ms(temp_update_ms), baud(baud) {}
 
@@ -17,7 +33,7 @@ public:
         Serial.begin(baud);
     }
 
-    void send_status() {
+    void send_status_old() {
         Serial.print("{\"action\":\"get\",\"type\":\"status\",\"data\":{\"connected\":true,\"running\":");
         if (state->running) {
             Serial.print("true,");
@@ -67,7 +83,53 @@ public:
         Serial.println("}}");
     }
 
+    void send_status() {
+        Serial.write((uint8_t)Command::Status);
+        Serial.write((uint8_t)this->state->heat_enabled ? 0x01 : 0x00);
+        Serial.write((uint8_t)this->state->control == ControlState::Idle ? 0x00 : 0x01);
+        Serial.write((uint8_t)this->state->control == ControlState::Tuning ? 0x00 : 0x01);
+        Serial.write((uint8_t)this->state->control == ControlState::Running ? 0x00 : 0x01);
+    }
+
     void handle_incoming_messages() {
+        while (Serial.available()) {
+            Command command;
+            Serial.readBytes(&(int)command, 1);
+            switch (command) {
+            case Command::Status:
+                send_status();
+                break;
+            case Command::Info:
+                break;
+            case Command::Disable:
+                break;
+            case Command::Enable:
+                break;
+            case Command::Idle:
+                break;
+            case Command::SetTemp:
+                break;
+            case Command::SetTempSlop:
+                break;
+            case Command::SetDutyCycle:
+                break;
+            case Command::TuneAll:
+                break;
+            case Command::TuneSteadyState:
+                break;
+            case Command::TuneVelocity:
+                break;
+            case Command::TuneInertia:
+                break;
+            case Command::SetData:
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    void handle_incoming_messages_old() {
         while (Serial.available()) {
             String incoming = Serial.readString();
 

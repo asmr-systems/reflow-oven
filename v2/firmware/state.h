@@ -41,6 +41,8 @@ public:
     ControlMode  mode         = ControlMode::SetPoint;
     TuningPhase  tuning_phase = TuningPhase::All;
 
+    bool heating_enabled = false;
+
     struct {
         double           temp = 0; // C
         unsigned long    time = 0; // ms

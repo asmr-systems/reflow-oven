@@ -13,33 +13,33 @@
 //     Cooldown,
 // };
 
-enum class TuningStage {
+enum class TuningPhase {
     All,
     SteadyState,
     Velocity,
     Inertia,
-}
+};
 
-enum class ControlState {
+enum class ControlStatus {
     Idle,
-    Tuning,
     Running,
+    Tuning,
 };
 
 enum class ControlMode {
     SetPoint,
     Rate,
     DutyCycle,
-}
+};
 
 class State {
 public:
     static constexpr uint16_t MaxTemp          = 260;
     static constexpr uint16_t SteadyStateTemp  = 120;
 
-    ControlState control      = ControlState::Idle;
-    ControlMode  mode         = ControlMode::SetPoint;
-    TuningPhase  tuning_phase = TuningPhase::All;
+    ControlStatus status       = ControlStatus::Idle;
+    ControlMode   mode         = ControlMode::SetPoint;
+    TuningPhase   tuning_phase = TuningPhase::All;
 
     bool heating_enabled = false;
 
@@ -75,13 +75,6 @@ public:
         this->data.time = millis();
     }
 
-    void begin_learning() {
-        this->running = false;
-        this->learning = true;
-        this->testing = false;
-        this->start_ms = millis();
-        this->learning_phase = LearningPhase::MaxRamp;
-    }
 private:
     int therm_cs_pin;
     MAX6675 thermocouple;

@@ -38,11 +38,11 @@ PID    pid;
 // * 0x40 <ADDR> <N_BYTES> <DATA MSB> ... <DATA LSB> - set data (?)
 // ###### Responses (from controller)
 // * 0x00 <DATA> - status
-//  * DATA[0] - 1:enabled, 0:disabled
-//  * DATA[1] - 1:running, 0:idle
-//  * DATA[2] - 1:tuning, 0:not-tuning
-//  * DATA[3:4] - 0:tuning base, 1:tuning velocity, 2: tuning inertia
-//  * DATA[5:7] - don't care
+//  * DATA[0]   - 1:enabled, 0:disabled
+//  * DATA[1:2] - 0:idle, 1:running, 2:tuning
+//  * DATA[3:4] - 0:n/a, 1:tuning base, 2:tuning velocity, 3: tuning inertia
+//  * DATA[5:6] - 0:n/a, 1:set_point, 2:rate, 3:duty_cycle
+//  * DATA[7]   - don't care
 // * 0x01 <N_BYTES> <MSB> ... <LSB> - info
 // * 0x20 <MSB> <LSB> - scalar target set
 // * 0x21 <MSB> <LSB> - temp slope set
@@ -59,7 +59,8 @@ void loop() {
 
     comms.handle_incoming_messages();
 
-    comms.send_temperature();
+    // comms.send_temperature();
+    return;
 
     if (!state.heating_enabled) {
         driver.off();
@@ -68,26 +69,26 @@ void loop() {
 
     // heating is enabled from this point onward.
 
-    if (state.control == ControlState::Idle) {
+    if (state.status == ControlStatus::Idle) {
         driver.off();
     }
 
-    if (state.control == ControlState::Tuning) {
+    if (state.status == ControlStatus::Tuning) {
         TuningResult result = pid.tune(state.tuning_phase, state.data.temp, state.data.time);
         driver.set(result.duty_cycle);
-        bool advance = result.done && state.requested.tuning_phase == TuningPhase::All;
+        bool advance_phase = result.done && state.requested.tuning_phase == TuningPhase::All;
 
-        if (advance) {
+        if (advance_phase) {
             if (state.tuning_phase == TuningPhase::SteadyState)
                 state.tuning_phase = TuningPhase::Velocity;
             if (state.tuning_phase == TuningPhase::Velocity)
                 state.tuning_phase = TuningPhase::Inertia;
             if (state.tuning_phase == TuningPhase::Inertia)
-                state.control = ControlState::Idle;
+                state.status = ControlStatus::Idle;
         }
     }
 
-    if (state.control == ControlState::Running) {
+    if (state.status == ControlStatus::Running) {
         double duty_cycle;
 
         if (state.mode == ControlMode::SetPoint) {

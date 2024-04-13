@@ -113,8 +113,7 @@
 ###### Responses (from controller)
 * 0x00 <DATA> - status
  * DATA[0] - 1:enabled, 0:disabled
- * DATA[1] - 1:running, 0:idle
- * DATA[2] - 1:tuning, 0:not-tuning
+ * DATA[1:2] - 0:idle, 1:running, 2:tuning
  * DATA[3:4] - 0:tuning base, 1:tuning velocity, 2: tuning inertia
  * DATA[5:7] - don't care
 * 0x01 <N_BYTES> <MSB> ... <LSB> - info

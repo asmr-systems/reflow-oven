@@ -6,6 +6,8 @@
 struct TuningResult {
     bool    done       = false;
     uint8_t duty_cycle = 0;
+
+    TuningResult(bool d, uint8_t d_c) : done(d), duty_cycle(d_c) {}
 };
 
 class PID {

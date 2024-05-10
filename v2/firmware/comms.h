@@ -4,11 +4,19 @@
 // #include <ArduinoJson.h>
 #include "state.h"
 
+// Binary protocol
+// all transmissions begin with a scream byte 0xAA which is not a valid
+// ascii character importantly.
+// # Commands (from daemon)
+//
+
 class Comms {
 public:
     int baud;
     State* state;
     int temp_update_ms;
+
+    const uint8_t StartByte = 0xAA;
 
     enum class Command {
         Status          = 0x00,
@@ -38,24 +46,66 @@ public:
             char rx;
             Serial.readBytes(&rx, 1);
 
-            switch ((Command)rx) {
+            if ((uint8_t)rx == StartByte) {
+                this->transmission.in_progress = true;
+                this->transmission.bytes_received = 0;
+                return;
+            }
+
+            if (!this->transmission.in_progress) return;
+
+            if (this->transmission.in_progress && this->transmission.bytes_received == 0) {
+                this->transmission.command = (Command)rx;
+                this->transmission.bytes_received++;
+            }
+
+
+            switch (this->transmission.command) {
             case Command::Status:
                 send_status();
+                this->transmission.in_progress = false;
                 break;
             case Command::Info:
-                Serial.write(0x22);
+                send_info();
+                this->transmission.in_progress = false;
                 break;
             case Command::Disable:
+                this->state->disable();
+                send_status();
+                this->transmission.in_progress = false;
                 break;
             case Command::Enable:
+                this->state->enable();
+                send_status();
+                this->transmission.in_progress = false;
                 break;
             case Command::Idle:
+                this->state->go_idle();
+                send_status();
+                this->transmission.in_progress = false;
                 break;
             case Command::SetTemp:
+                uint8_t n_bytes = 2;
+                if (this->transmission.bytes_received == 1) {
+                    this->transmission.bytes_remaining = n_bytes;
+                }
+                if (this->transmission.bytes_remaining > 0) {
+                    this->transmission.buffer[n_bytes - this->transmission.bytes_remaining] = (uint8_t)rx;
+                } else {
+                    this->state->request_temp(bytes_2_float(this->transmission.buffer));
+                    send_scalar_temp_target();
+                    this->transmission.in_progress = false;
+                }
                 break;
             case Command::SetTempSlope:
+                this->state->request_temp_rate();
+                send_slope_temp_target();
+                this->transmission.in_progress = false;
                 break;
             case Command::SetDutyCycle:
+                this->state->request_duty_cycle();
+                send_duty_cycle();
+                this->transmission.in_progress = false;
                 break;
             case Command::TuneAll:
                 break;
@@ -68,12 +118,17 @@ public:
             case Command::SetData:
                 break;
             default:
+                this->transmission.in_progress = false;
                 break;
             }
+
+            this->transmission.bytes_received++;
         }
     }
 
     void send_status() {
+        // 0xAA StartByte
+        Serial.write(StartByte);
         // 0x00 <DATA>
         Serial.write((uint8_t)Command::Status);
         // DATA[0] - 1:enabled, 0:disabled
@@ -123,8 +178,22 @@ public:
         }
         uint8_t data = (ctrl_mode << 5) | (tuning_phase << 3) | (ctrl_stat << 1) | ctrl_enabled;
         Serial.write(data);
+    }
 
-        // Serial.println(); ? not sure if we need a new line
+    void send_info() {
+
+    }
+
+    void send_scalar_temp_target() {
+
+    }
+
+    void send_slope_temp_target() {
+
+    }
+
+    void send_duty_cycle() {
+
     }
 
     // void send_status_old() {
@@ -229,7 +298,18 @@ public:
     // }
 
 private:
-    // JsonDocument json;
+    struct {
+        bool    in_progress     = false;
+        uint8_t bytes_received  = 0;
+        uint8_t bytes_remaining = 0;
+        uint8_t buffer[50]      = {0};
+        Command command         = Command::Status;
+    } transmission;
+
+    void bytes_2_float(uint8_t &buf) {
+        // TODO convert buffered bytes into float32 (4 bytes)
+    }
+
 };
 
 #endif

@@ -28,8 +28,8 @@ PID    pid;
 // * 0x10 - disable
 // * 0x11 - enable
 // * 0x12 - become idle (stops tuning as well)
-// * 0x20 <MSB> <LSB> - set scalar target temperature (big endian)
-// * 0x21 <MSB> <LSB> - set target temperature slope (big endian)
+// * 0x20 <MSB> <B> <B> <LSB> - set scalar target temperature (big endian, float32)
+// * 0x21 <MSB> <B> <B> <LSB> - set target temperature slope (big endian, float32)
 // * 0x22 <DUT> - drive heating elements at duty cycle
 // * 0x30 - tune all
 // * 0x31 - tune base (maintain) power parameter

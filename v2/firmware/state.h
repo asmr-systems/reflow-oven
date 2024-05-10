@@ -64,6 +64,31 @@ public:
         thermocouple.begin();
     }
 
+    void disable() {
+        this->heating_enabled = false;
+        this->status = ControlStatus::Idle;
+    }
+
+    void enable() {
+        this->heating_enabled = true;
+    }
+
+    void go_idle() {
+        this->status = ControlStatus::Idle;
+    }
+
+    void request_temp(float temp) {
+
+    }
+
+    void request_temp_rate() {
+
+    }
+
+    void request_duty_cycle() {
+
+    }
+
     void record_temp() {
         // MAX6675 needs 250ms between reads.
         static unsigned long last_read_ms = 0;

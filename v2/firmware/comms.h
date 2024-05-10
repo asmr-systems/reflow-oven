@@ -35,16 +35,15 @@ public:
 
     void handle_incoming_messages() {
         while (Serial.available()) {
-            Serial.write(0xFF);
-            Command command;
-            Serial.readBytes((char*)&command, 1);
-            switch (command) {
+            char rx;
+            Serial.readBytes(&rx, 1);
+
+            switch ((Command)rx) {
             case Command::Status:
-                // TODO debug, this isn't matching
-                Serial.write(0x11);
                 send_status();
                 break;
             case Command::Info:
+                Serial.write(0x22);
                 break;
             case Command::Disable:
                 break;

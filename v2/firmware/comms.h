@@ -18,6 +18,12 @@ public:
 
     const uint8_t StartByte = 0xAA;
 
+    enum class RxResult {
+        Ok,
+        Timeout,
+        StartByteEncountered,
+    };
+
     enum class Command {
         Status          = 0x00,
         Info            = 0x01,
@@ -41,24 +47,33 @@ public:
         Serial.begin(baud);
     }
 
+    void handle_command() {
+
+    }
+
     void handle_incoming_messages() {
         while (Serial.available()) {
             char rx;
             Serial.readBytes(&rx, 1);
 
+            // TODO refactor to read multiple bytes using readBytes(&rx, n)
+            // rather than introducing all this in_progress, bytes_received
+            // looping structure. i think this will be easier to reason about.
+
+            // if the start byte is encountered, begin transmission cycle
             if ((uint8_t)rx == StartByte) {
                 this->transmission.in_progress = true;
                 this->transmission.bytes_received = 0;
                 return;
             }
 
+            // if a transmission is not in progress, ignore current byte.
             if (!this->transmission.in_progress) return;
 
             if (this->transmission.in_progress && this->transmission.bytes_received == 0) {
                 this->transmission.command = (Command)rx;
                 this->transmission.bytes_received++;
             }
-
 
             switch (this->transmission.command) {
             case Command::Status:
@@ -85,25 +100,21 @@ public:
                 this->transmission.in_progress = false;
                 break;
             case Command::SetTemp:
-                uint8_t n_bytes = 2;
-                if (this->transmission.bytes_received == 1) {
-                    this->transmission.bytes_remaining = n_bytes;
-                }
-                if (this->transmission.bytes_remaining > 0) {
-                    this->transmission.buffer[n_bytes - this->transmission.bytes_remaining] = (uint8_t)rx;
-                } else {
+                if (!this->collecting_cmd_bytes((uint8_t)rx, 4)) {
                     this->state->request_temp(bytes_2_float(this->transmission.buffer));
                     send_scalar_temp_target();
                     this->transmission.in_progress = false;
                 }
                 break;
             case Command::SetTempSlope:
-                this->state->request_temp_rate();
-                send_slope_temp_target();
-                this->transmission.in_progress = false;
+                if (!this->collecting_cmd_bytes((uint8_t)rx, 4)) {
+                    this->state->request_temp_rate(bytes_2_float(this->transmission.buffer));
+                    send_slope_temp_target();
+                    this->transmission.in_progress = false;
+                }
                 break;
             case Command::SetDutyCycle:
-                this->state->request_duty_cycle();
+                this->state->request_duty_cycle((uint8_t)rx);
                 send_duty_cycle();
                 this->transmission.in_progress = false;
                 break;
@@ -181,7 +192,10 @@ public:
     }
 
     void send_info() {
-
+        Serial.write(0xAA);
+        float n = 666.6;
+        byte *b = (byte *)&n;
+        Serial.write(b, 4);
     }
 
     void send_scalar_temp_target() {
@@ -306,10 +320,57 @@ private:
         Command command         = Command::Status;
     } transmission;
 
-    void bytes_2_float(uint8_t &buf) {
-        // TODO convert buffered bytes into float32 (4 bytes)
+
+    bool collecting_cmd_bytes(uint8_t rx, uint8_t n_bytes, uint8_t start_byte = 1) {
+        if (this->transmission.bytes_received == start_byte) {
+            this->transmission.bytes_remaining = n_bytes;
+        }
+        if (this->transmission.bytes_remaining > 0) {
+            this->transmission.buffer[n_bytes - this->transmission.bytes_remaining] = rx;
+            this->transmission.bytes_remaining--;
+            return true;
+        }
+        return false;
     }
 
+    float bytes_2_float(uint8_t buf[4]) {
+        // convert buffered bytes into float32 (4 bytes)
+        float f;
+        memcpy(&f, buf, 4);
+        return f;
+    }
+
+    // reads bytes until buffer is full, the start byte is encountered,
+    // a timeout occurs, or no serial is available.
+    RxResult read_bytes_until(uint8_t *buffer, uint16_t length, uint8_t start_byte = StartByte, uint16_t timeout_ms = 10) {
+        unsigned long start_time = millis();
+        bool timeout = false;
+        bool start_byte_encountered = false;
+        uint16_t bytes_read = 0;
+
+        while (
+            !timeout &&
+            bytes_read < length &&
+            !start_byte_occured &&
+            Serial.available())
+        {
+            // check for timeout
+            if (millis() - start_time >= timeout_ms)
+                return RxResult::Timeout;
+
+            // read 1 byte
+            char rx;
+            Serial.readBytes(&rx, 1);
+
+            // check for start byte
+            if ((uint8_t)rx == StartByte)
+                return RxResult::StartByteEncountered;
+
+            buffer[bytes_read++] = (uint8_t)rx;
+        }
+
+        return RxResult::Ok;
+    }
 };
 
 #endif

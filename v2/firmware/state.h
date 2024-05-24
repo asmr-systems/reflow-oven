@@ -81,11 +81,11 @@ public:
 
     }
 
-    void request_temp_rate() {
+    void request_temp_rate(float temp_rate) {
 
     }
 
-    void request_duty_cycle() {
+    void request_duty_cycle(uint8_t duty_cycle) {
 
     }
 

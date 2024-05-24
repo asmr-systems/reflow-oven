@@ -44,13 +44,13 @@ public:
     bool heating_enabled = false;
 
     struct {
-        double           temp = 0; // C
+        float            temp = 0; // C
         unsigned long    time = 0; // ms
     } data;
 
     struct {
-        double      point        = 25; // C
-        double      rate         = 0;  // C/s
+        float       point        = 25; // C
+        float       rate         = 0;  // C/s
         uint8_t     duty_cycle   = 0;  // [0, 100]
         TuningPhase tuning_phase = TuningPhase::All;
     } requested;
@@ -78,7 +78,7 @@ public:
     }
 
     void request_temp(float temp) {
-
+        this->requested.point = temp;
     }
 
     void request_temp_rate(float temp_rate) {

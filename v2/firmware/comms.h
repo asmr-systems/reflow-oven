@@ -36,6 +36,7 @@ public:
         TuneVelocity    = 'K',
         TuneInertia     = 'L',
         SetData         = 'M',
+        Reset           = 'Z',
     };
 
     Comms(State* state, int temp_update_ms = 100, int baud = 9600)
@@ -138,12 +139,17 @@ public:
     void handle_incoming_messages() {
         while (Serial.available()) {
             String msg = Serial.readString();
+            msg.trim();
 
             // if first character isn't start transmission, ignore message.
             if (msg[0] != StartByte)
                 return;
 
             switch ((Command)msg[1]) {
+            case Command::Reset:
+                this->state->reset();
+                send_status();
+                break;
             case Command::Status:
                 send_status();
                 break;
@@ -163,6 +169,8 @@ public:
                 send_status();
                 break;
             case Command::SetTemp:
+                this->state->request_temp(get_word(msg, 1).toFloat());
+                send_scalar_temp_target();
                 break;
             case Command::SetTempSlope:
                 break;
@@ -401,8 +409,9 @@ public:
         Serial.write(StartByte);
         // 0x01 <FLOAT[4]>
         Serial.write((uint8_t)Command::SetTemp);
-        uint8_t *b = (uint8_t *)&this->state->requested.point;
-        Serial.write(b, 4);
+        Serial.write(Delimiter);
+
+        Serial.println(this->state->requested.point);
     }
 
     void send_slope_temp_target() {
@@ -527,7 +536,7 @@ private:
         uint8_t head_idx = 0, tail_idx = 0, word = 0;
         bool head_anchored = false;
         for (uint16_t i = 0; i < msg.length(); i++) {
-            if (msg[i] == Delimiter) {
+            if (msg[i] == Delimiter || i == msg.length()-1) {
                 word++;
 
                 if (!head_anchored) {
@@ -540,23 +549,23 @@ private:
                         // if the ending of the substring is the remainder
                         // of the message, return now.
                         if (n < 0) {
-                            return msg.substring(head_idx, msg.length() - 1);
+                            return msg.substring(head_idx, msg.length());
                         }
                     }
                 }
                 else {
                     if (word_start + n == word) {
-                        return msg.substring(head_idx, i - 1);
+                        return msg.substring(head_idx, i == msg.length()-1 ? i+1 : i);
                     }
                 }
             }
         }
 
-        if (head_idx == 0) {
+        if (head_idx == 0 && tail_idx == 0) {
             return "";
         }
 
-        return msg.substring(head_idx, msg.length() - 1);
+        return msg.substring(head_idx, msg.length());
     }
 
     // AA 20 66 A6 26 44

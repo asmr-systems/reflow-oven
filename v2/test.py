@@ -23,6 +23,41 @@ class TestFirmware(unittest.TestCase):
         s = self.serial.readline()
         self.assertEqual(s, '\x02A 00\r\n'.encode())
 
+    def test_reset(self):
+        # send reset
+        self.serial.write('\x02Z'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02A 00\r\n'.encode())
+
+        # send enable
+        self.serial.write('\x02D'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02A 01\r\n'.encode())
+
+        # send reset
+        self.serial.write('\x02Z'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02A 00\r\n'.encode())
+
+    def test_enable_disable(self):
+        # send enable
+        self.serial.write('\x02D'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02A 01\r\n'.encode())
+
+        # send disable
+        self.serial.write('\x02C'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02A 00\r\n'.encode())
+
+    def test_send_temp(self):
+        # send temp
+        self.serial.write('\x02F 123.4'.encode())
+        s = self.serial.readline()
+        self.assertEqual(s, '\x02F 123.40\r\n'.encode())
+
+
+
 class TestApp(unittest.TestCase):
     def test_nothing(self):
         self.assertTrue(True)

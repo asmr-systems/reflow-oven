@@ -62,6 +62,15 @@ public:
         pinMode(therm_cs_pin, OUTPUT);
         SPI.begin();
         thermocouple.begin();
+        reset();
+    }
+
+    void reset() {
+        status       = ControlStatus::Idle;
+        mode         = ControlMode::SetPoint;
+        tuning_phase = TuningPhase::All;
+
+        heating_enabled = false;
     }
 
     void disable() {

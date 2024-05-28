@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include "MAX6675.h"
 
+#include "AT24C32E.h"
 #include "driver.h"
 
 
@@ -62,6 +63,8 @@ public:
         pinMode(therm_cs_pin, OUTPUT);
         SPI.begin();
         thermocouple.begin();
+        eeprom.begin();
+
         reset();
     }
 
@@ -88,14 +91,44 @@ public:
 
     void request_temp(float temp) {
         this->requested.point = temp;
+        this->mode = ControlMode::SetPoint;
+        this->status = ControlStatus::Running;
     }
 
     void request_temp_rate(float temp_rate) {
-
+        this->requested.rate = temp_rate;
+        this->mode = ControlMode::Rate;
+        this->status = ControlStatus::Running;
     }
 
     void request_duty_cycle(uint8_t duty_cycle) {
+        if (duty_cycle > 100)
+            duty_cycle = 100;
+        this->requested.duty_cycle = duty_cycle;
+        this->mode = ControlMode::DutyCycle;
+        this->status = ControlStatus::Running;
+    }
 
+    void request_tuning_phase(TuningPhase phase) {
+        requested.tuning_phase = phase;
+        this->status = ControlStatus::Tuning;
+    }
+
+    void set_data(uint16_t addr, String data) {
+        addr += 3; // offset for internal variables
+        // each data slot is 60 bytes long with the size as the first byte
+        uint8_t c[60];
+        uint8_t size = (uint8_t)data.length();
+        c[0] = size;
+        data.toCharArray((char *)&c[1], size);
+        eeprom.write(addr, c, size + 1);
+    }
+
+    void get_data(uint16_t addr, uint8_t *out) {
+        addr += 3; // offset for internal variables
+        uint8_t size;
+        eeprom.read(addr, 1, &size);
+        eeprom.read(addr+1, size, out);
     }
 
     void record_temp() {
@@ -112,6 +145,7 @@ public:
 private:
     int therm_cs_pin;
     MAX6675 thermocouple;
+    AT24C32E eeprom;
 };
 
 #endif

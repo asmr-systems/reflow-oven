@@ -7,8 +7,11 @@
 class AT24C32E {
 public:
     AT24C32E(uint8_t dev_addr = 0) {
-        Wire.begin();
         this->dev_addr = 0xA0 | (0x0F & dev_addr);
+    };
+
+    void begin() {
+        Wire.begin();
     };
 
     uint8_t read(uint16_t address) {
@@ -20,7 +23,7 @@ public:
         Wire.endTransmission();
         delay(10);
 
-        Wire.requestFrom(this->dev_addr, 1);
+        Wire.requestFrom(this->dev_addr, (uint8_t)1);
         delay(10);
 
         uint8_t data = Wire.read();

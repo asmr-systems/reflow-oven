@@ -4,11 +4,6 @@
 // #include <ArduinoJson.h>
 #include "state.h"
 
-// Binary protocol
-// all transmissions begin with a scream byte 0xAA which is not a valid
-// ascii character importantly.
-// # Commands (from daemon)
-//
 
 class Comms {
 public:
@@ -16,7 +11,8 @@ public:
     State* state;
     int temp_update_ms;
 
-    static const uint8_t StartByte = 0xAA;
+    static const uint8_t StartByte = 0x02; // ASCII STX
+    static const uint8_t Delimiter = 0x20; // ASCII STX
 
     // TODO remove this, not needed anymore.
     // enum class RxResult {
@@ -27,19 +23,19 @@ public:
     // };
 
     enum class Command {
-        Status          = 0x00,
-        Info            = 0x01,
-        Disable         = 0x10,
-        Enable          = 0x11,
-        Idle            = 0x12,
-        SetTemp         = 0x20,
-        SetTempSlope    = 0x21,
-        SetDutyCycle    = 0x22,
-        TuneAll         = 0x30,
-        TuneSteadyState = 0x31,
-        TuneVelocity    = 0x32,
-        TuneInertia     = 0x33,
-        SetData         = 0x40,
+        Status          = 'A',
+        Info            = 'B',
+        Disable         = 'C',
+        Enable          = 'D',
+        Idle            = 'E',
+        SetTemp         = 'F',
+        SetTempSlope    = 'G',
+        SetDutyCycle    = 'H',
+        TuneAll         = 'I',
+        TuneSteadyState = 'J',
+        TuneVelocity    = 'K',
+        TuneInertia     = 'L',
+        SetData         = 'M',
     };
 
     Comms(State* state, int temp_update_ms = 100, int baud = 9600)
@@ -141,6 +137,56 @@ public:
 
     void handle_incoming_messages() {
         while (Serial.available()) {
+            String msg = Serial.readString();
+
+            // if first character isn't start transmission, ignore message.
+            if (msg[0] != StartByte)
+                return;
+
+            switch ((Command)msg[1]) {
+            case Command::Status:
+                send_status();
+                break;
+            case Command::Info:
+                send_info();
+                break;
+            case Command::Disable:
+                this->state->disable();
+                send_status();
+                break;
+            case Command::Enable:
+                this->state->enable();
+                send_status();
+                break;
+            case Command::Idle:
+                this->state->go_idle();
+                send_status();
+                break;
+            case Command::SetTemp:
+                break;
+            case Command::SetTempSlope:
+                break;
+            case Command::SetDutyCycle:
+                break;
+            case Command::TuneAll:
+                break;
+            case Command::TuneSteadyState:
+                break;
+            case Command::TuneVelocity:
+                break;
+            case Command::TuneInertia:
+                break;
+            case Command::SetData:
+                break;
+            default:
+                break;
+
+            }
+        }
+    }
+
+    void handle_incoming_messages_binary() {
+        while (Serial.available()) {
             char rx;
             Serial.readBytes(&rx, 1);
 
@@ -223,11 +269,14 @@ public:
         }
     }
 
-    void send_status() {
-        // 0xAA StartByte
+        void send_status() {
+        // StartByte
         Serial.write(StartByte);
-        // 0x00 <DATA>
+
+        // Status <DATA>
         Serial.write((uint8_t)Command::Status);
+        Serial.write(Delimiter);
+
         // DATA[0] - 1:enabled, 0:disabled
         uint8_t ctrl_enabled = this->state->heating_enabled ? 0x01 : 0x00;
         // DATA[1:2] - 0:idle, 1:running, 2:tuning
@@ -274,14 +323,77 @@ public:
             }
         }
         uint8_t data = (ctrl_mode << 5) | (tuning_phase << 3) | (ctrl_stat << 1) | ctrl_enabled;
-        Serial.write(data);
+
+        char buf[4];
+        sprintf(buf, "%02X", data);
+        Serial.println(buf);
     }
 
+    // TODO remove this old binary protocol method
+    // void send_status() {
+    //     // 0xAA StartByte
+    //     Serial.write(StartByte);
+    //     // 0x00 <DATA>
+    //     Serial.write((uint8_t)Command::Status);
+    //     // DATA[0] - 1:enabled, 0:disabled
+    //     uint8_t ctrl_enabled = this->state->heating_enabled ? 0x01 : 0x00;
+    //     // DATA[1:2] - 0:idle, 1:running, 2:tuning
+    //     uint8_t ctrl_stat = 0x00;
+    //     switch (this->state->status) {
+    //     case ControlStatus::Idle:
+    //         ctrl_stat = 0x00;
+    //         break;
+    //     case ControlStatus::Running:
+    //         ctrl_stat = 0x01;
+    //         break;
+    //     case ControlStatus::Tuning:
+    //         ctrl_stat = 0x10;
+    //         break;
+    //     }
+    //     // DATA[3:4] - 0:n/a, 1:tuning steady-state, 2:tuning velocity, 3:tuning inertia
+    //     uint8_t tuning_phase = 0x00;
+    //     if (this->state->status == ControlStatus::Tuning) {
+    //         switch (this->state->tuning_phase) {
+    //         case TuningPhase::SteadyState:
+    //             tuning_phase = 0x01;
+    //             break;
+    //         case TuningPhase::Velocity:
+    //             tuning_phase = 0x10;
+    //             break;
+    //         case TuningPhase::Inertia:
+    //             tuning_phase = 0x11;
+    //             break;
+    //         }
+    //     }
+    //     // DATA[5:6] - 0:n/a, 1:set_point, 2:rate, 3:duty_cycle
+    //     uint8_t ctrl_mode = 0x00;
+    //     if (this->state->status == ControlStatus::Running) {
+    //         switch (this->state->mode) {
+    //         case ControlMode::SetPoint:
+    //             ctrl_mode = 0x01;
+    //             break;
+    //         case ControlMode::Rate:
+    //             ctrl_mode = 0x10;
+    //             break;
+    //         case ControlMode::DutyCycle:
+    //             ctrl_mode = 0x11;
+    //             break;
+    //         }
+    //     }
+    //     uint8_t data = (ctrl_mode << 5) | (tuning_phase << 3) | (ctrl_stat << 1) | ctrl_enabled;
+    //     Serial.write(data);
+    // }
+
     void send_info() {
-        Serial.write(0xAA);
-        float n = 666.6;
-        byte *b = (byte *)&n;
-        Serial.write(b, 4);
+        // StartByte
+        Serial.write(StartByte);
+
+        // Info <DATA>
+        Serial.write((uint8_t)Command::Info);
+        Serial.write(Delimiter);
+
+        // TODO send more stuff
+        Serial.println();
     }
 
     void send_scalar_temp_target() {
@@ -411,6 +523,41 @@ private:
         Command command         = Command::Status;
     } transmission;
 
+    String get_word(String msg, int word_start, int n = 1) {
+        uint8_t head_idx = 0, tail_idx = 0, word = 0;
+        bool head_anchored = false;
+        for (uint16_t i = 0; i < msg.length(); i++) {
+            if (msg[i] == Delimiter) {
+                word++;
+
+                if (!head_anchored) {
+                    if (word_start == word) {
+                        // the first index of the substring will be
+                        // the next index (after the delimiter)
+                        head_idx = i+1;
+                        head_anchored = true;
+
+                        // if the ending of the substring is the remainder
+                        // of the message, return now.
+                        if (n < 0) {
+                            return msg.substring(head_idx, msg.length() - 1);
+                        }
+                    }
+                }
+                else {
+                    if (word_start + n == word) {
+                        return msg.substring(head_idx, i - 1);
+                    }
+                }
+            }
+        }
+
+        if (head_idx == 0) {
+            return "";
+        }
+
+        return msg.substring(head_idx, msg.length() - 1);
+    }
 
     // AA 20 66 A6 26 44
     bool collecting_cmd_bytes(uint8_t rx, uint8_t n_bytes, uint8_t skip_bytes = 2) {

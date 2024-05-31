@@ -52,15 +52,19 @@ void setup() {
     state.begin();
     comms.begin();
     driver.begin();
+
+    pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loop() {
-    state.record_temp();
+
+
+    // state.record_temp();
 
     comms.handle_incoming_messages();
 
     // comms.send_temperature();
-    return;
+    return; // DEBUG
 
     if (!state.heating_enabled) {
         driver.off();

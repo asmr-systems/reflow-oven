@@ -61,9 +61,9 @@ public:
 
     void begin() {
         pinMode(therm_cs_pin, OUTPUT);
-        SPI.begin();
-        thermocouple.begin();
-        eeprom.begin();
+        // SPI.begin();
+        // thermocouple.begin();
+        // eeprom.begin();
 
         reset();
     }
@@ -115,20 +115,31 @@ public:
     }
 
     void set_data(uint16_t addr, String data) {
-        addr += 3; // offset for internal variables
+        // addr += 3; // offset for internal variables
         // each data slot is 60 bytes long with the size as the first byte
-        uint8_t c[60];
-        uint8_t size = (uint8_t)data.length();
-        c[0] = size;
-        data.toCharArray((char *)&c[1], size);
-        eeprom.write(addr, c, size + 1);
+        // uint8_t c[60];
+        // uint8_t size = 1;//(uint8_t)data.length();
+        // c[0] = 'Z';
+        char c = 'Z';
+        // data.toCharArray((char *)c, size);
+        // eeprom.write(addr, c, size);
+        eeprom.write(0, (uint8_t)c);
     }
 
-    void get_data(uint16_t addr, uint8_t *out) {
-        addr += 3; // offset for internal variables
-        uint8_t size;
-        eeprom.read(addr, 1, &size);
-        eeprom.read(addr+1, size, out);
+    String get_data(uint16_t addr) {
+        // addr += 3; // offset for internal variables
+        uint8_t size = 1;
+        uint8_t c[60];
+        // eeprom.read(addr, 1, &size);
+        // eeprom.read(addr, size, c);
+        c[0] = (char)eeprom.read(addr);
+
+
+        // Serial.println(c[0]);
+
+        String data = String((char *)c).substring(0, size);
+
+        return data;
     }
 
     void record_temp() {

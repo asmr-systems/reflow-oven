@@ -207,9 +207,11 @@
          );
          ws.onopen = () => {
              getStatus(ws)
-             getProfiles(ws)
+             /* getProfiles(ws) */
          }
          ws.onmessage = (msg) => {
+             console.log(msg.data)
+             return
              const resp = JSON.parse(msg.data)
              switch (resp.type) {
                  case 'status':

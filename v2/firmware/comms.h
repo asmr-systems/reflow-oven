@@ -3,6 +3,20 @@
 
 #include "state.h"
 
+// ASCII PROTOCOL
+// commands
+// --------
+// "\x02A" - get status
+//   -> "\x02A --" where "--" is an ascii encoded hex byte.
+//     0   = enable/disable
+//     1:2 = 0 idle, 1 running, 2 tuning
+//     3:4 = 0 n/a, 1 tuning steady-state, 2 tuning velocity, 3 tuning inertia
+//     5:6 = 0 n/a, 1 point mode, 2 rate mode, 3 duty cycle mode
+//     7   = don't care
+//
+// "\x02B" - get info
+//   -> ???
+//
 
 class Comms {
 public:
@@ -39,15 +53,20 @@ public:
     }
 
     void handle_incoming_messages() {
+
         while (Serial.available()) {
+
             String msg = Serial.readString();
             msg.trim();
 
             // if first character isn't start transmission, ignore message.
-            if (msg[0] != StartByte)
+            if (msg[0] != StartByte) {
                 return;
+            }
 
             uint8_t data[60];
+            uint8_t size;
+            String data_str;
 
             switch ((Command)msg[1]) {
             case Command::Reset:
@@ -101,22 +120,22 @@ public:
                 send_status();
                 break;
             case Command::SetData:
-                this->state->set_data(
-                    get_word(msg, 1).toInt(),  // data addr
-                    get_word(msg, 2, -1)
-                );
-                // send_info();
-                // break;
+                // this->state->set_data(
+                //     get_word(msg, 1).toInt(),  // data addr
+                //     get_word(msg, 2, -1)
+                // );
+                // send_status();
+                break;
             case Command::GetData:
-                this->state->get_data(
-                    get_word(msg, 1).toInt(),  // data addr
-                    data
-                );
-                Serial.write(StartByte);
-                Serial.write((uint8_t)Command::GetData);
-                Serial.write(Delimiter);
-                Serial.print(get_word(msg, 1));
-                Serial.println(*data);
+                // data_str = this->state->get_data(
+                //     get_word(msg, 1).toInt()  // data addr
+                // );
+                // Serial.write(StartByte);
+                // Serial.write((uint8_t)Command::GetData);
+                // Serial.write(Delimiter);
+                // Serial.print(size);
+                // Serial.write(Delimiter);
+                // Serial.println(data_str);
                 break;
             default:
                 break;

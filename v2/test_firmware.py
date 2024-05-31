@@ -82,6 +82,7 @@ class TestFirmware(unittest.TestCase):
     def test_set_data(self):
         # send duty cycle above 100
         self.serial.write('\x02M 0 this is some custom data!'.encode())
+        self.serial.write('\x02N 0'.encode())
         s = self.serial.readline()
         self.assertEqual(s, '\x02N 0 this is some custom data!\r\n'.encode())
 

@@ -30,8 +30,7 @@ async def profile_handler(request):
     return web.json_response({'message': 'profile load successful'})
   return web.json_response({'error': 'No file provided'})
 
-# TODO: i think status should return an amalgamation of oven status,
-# job status, connection details, current temperature, and more
+
 @routes.get('/status')
 async def get_status(request):
     data, status = await api.get_status(request.app)
@@ -53,14 +52,14 @@ async def get_connection(request):
 
 @routes.get('/job')
 async def get_job(request):
-    return web.Response(text=json.dumps(api.get_job_status(request.app)))
+    return web.Response(text=json.dumps(await api.get_job_status(request.app)))
 
 
 @routes.get('/temperature')
 async def get_temperature(request):
     return web.Response(text=json.dumps(await api.get_temperature(request.app)))
 
-
+# TODO implement api
 @routes.get('/data')
 async def get_data(request):
     downsample = False
@@ -68,23 +67,23 @@ async def get_data(request):
         downsample = request.rel_url.query['downsample']
     return web.Response(text=json.dumps(await api.get_recorded_data(request.app, downsample=downsample)))
 
-
+# TODO implement api
 @routes.put('/job')
 async def set_job(request):
     job_info = request.rel_url.query
     return web.Response(text=json.dumps(await api.set_job(request.app, job_info)))
 
-
+# TODO implement api
 @routes.put('/start')
 async def set_job_start(request):
     return web.Response(text=json.dumps(await api.start_job(request.app)))
 
-
+# TODO implement api
 @routes.put('/stop')
 async def set_job_stop(request):
     return web.Response(text=json.dumps(await api.stop_job(request.app)))
 
-
+# TODO implement api
 @routes.put('/temperature')
 async def set_temperature(request):
     mode = ControlMode.Point

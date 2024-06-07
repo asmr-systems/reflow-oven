@@ -96,3 +96,13 @@ def make_status_response(app):
             'oven': make_oven_status(app)['data']
         },
     }
+
+def make_temperature_response(data):
+    return {
+        'action': 'get',
+        'type': 'temperature',
+        'data': {
+            'time': data['time'],
+            'temperature': data['temperature'],
+        }
+    }

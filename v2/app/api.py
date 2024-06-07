@@ -1,7 +1,9 @@
 import glob
+import time
 
 from app import serial
-from .types import make_connection_response, make_status_response, SerialResponse
+from .types import make_connection_response, make_status_response, SerialResponse, make_job_status
+from .types import make_temperature_response
 from .types import JobStatus, ControlStatus, JobType, TuningPhase, ControlMode
 
 
@@ -41,6 +43,7 @@ def decode_status_byte(app, status_byte):
     app['ctx'].oven.enabled = enabled
     app['ctx'].oven.mode = [None, ControlMode.Point, ControlMode.Rate, ControlMode.DutyCycle][control_mode]
     app['ctx'].oven.status = [ControlStatus.Idle, ControlStatus.Running, ControlStatus.Tuning][control_status]
+
     if tuning_phase != 0 and app['ctx'].oven.status == ControlStatus.Tuning:
         app['ctx'].job.type = JobType.Tuning
         app['ctx'].job.status = JobStatus.Running
@@ -75,40 +78,41 @@ async def connect(app, port=None):
 
 
 async def get_job_status(app):
+    resp = await serial_request(app, "A")
+    if resp.status != SerialResponse.Status.Ok:
+        return handle_error_response(resp)
+
+    decode_status_byte(app, int(resp.data.split(' ')[1], 16))
+
     return make_job_status(app)
 
-
+# TODO implement me
 async def set_job(app, job_settings):
     # TODO implement me
     return {}
 
-
+# TODO implement me
 async def start_job(app):
-    # TODO implement me
     return {}
 
-
+# TODO implement me
 async def stop_job(app):
-    # TODO implement me
     return {}
 
 
 async def get_temperature(app):
-    if not app['ctx'].serial.connected:
-        return make_connection_response(app)
+    resp = await serial_request(app, "F")
+    if resp.status != SerialResponse.Status.Ok:
+        return handle_error_response(resp)
 
-    resp = " "
-    while not has_startbyte(resp):
-        resp = await app['ctx'].serial.request("\x02F")
-    resp = resp[1:].strip()
-
-    if resp[0] != "F":
-        # TODO: handle this error!
-        return {}
+    # TODO build this into serial_request as optional parameter: match_command=False
+    # if resp[0] != "F":
+    #     # TODO: handle this error!
+    #     return {}
 
     data = {
         'time': time.time(),
-        'temperature': float(resp[1:]),
+        'temperature': float(resp.data[1:]),
     }
 
     app['ctx'].oven.latest_temp = data['temperature']
@@ -116,12 +120,12 @@ async def get_temperature(app):
 
     return make_temperature_response(data)
 
-
+# TODO implement me
 async def get_recorded_data(app, downsample=False):
     # read recorded data and pass back in arrays
     pass
 
-
+# TODO implement me
 async def set_temperature(app, mode, value):
     # TODO check stuff
     pass

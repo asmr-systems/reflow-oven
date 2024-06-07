@@ -44,6 +44,7 @@ public:
         TuneInertia     = 'M',
         SetData         = 'N',
         GetData         = 'O',
+        Start           = 'P',
         Reset           = 'Z',
     };
 
@@ -119,6 +120,10 @@ public:
                 break;
             case Command::TuneInertia:
                 this->state->request_tuning_phase(TuningPhase::Inertia);
+                send_status();
+                break;
+            case Command::Start:
+                this->state->start();
                 send_status();
                 break;
             case Command::SetData:

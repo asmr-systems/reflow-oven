@@ -61,7 +61,9 @@ def make_job_status(app):
         'type': 'job',
         'data': {
             'status': app['ctx'].job.status,
+            'save': app['ctx'].job.save,
             'type': app['ctx'].job.type,
+            'details': app['ctx'].job.details,
             'start_time': app['ctx'].job.start_time,
             'elapsed_seconds': app['ctx'].job.elapsed_seconds,
             'profile': app['ctx'].job.profile,

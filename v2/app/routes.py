@@ -15,8 +15,13 @@ routes = web.RouteTableDef()
 async def http_handler(request):
     return web.FileResponse(path=str(request.app['ctx'].config.static_dir / 'index.html'))
 
-@routes.get('/profile')
-async def profile_handler(request):
+@routes.get('/profiles')
+async def get_profiles(request):
+    return web.Response(text=json.dumps(request.app['ctx'].profiles))
+
+# TODO fix?
+@routes.put('/profile')
+async def upload_profile(request):
   reader = await request.multipart()
   field = await reader.next()
 
@@ -29,6 +34,7 @@ async def profile_handler(request):
 
     return web.json_response({'message': 'profile load successful'})
   return web.json_response({'error': 'No file provided'})
+
 
 
 @routes.get('/status')
@@ -47,17 +53,20 @@ async def get_connection(request):
     port = None
     if 'port' in request.rel_url.query:
         port = request.rel_url.query['port']
-    return web.Response(text=json.dumps(await api.connect(request.app, port=port)))
+    data, status = await api.connect(request.app, port=port)
+    return web.Response(text=json.dumps(data), status=status)
 
 
 @routes.get('/job')
 async def get_job(request):
-    return web.Response(text=json.dumps(await api.get_job_status(request.app)))
+    data, status = await api.get_job_status(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
 
 @routes.get('/temperature')
 async def get_temperature(request):
-    return web.Response(text=json.dumps(await api.get_temperature(request.app)))
+    data, status = await api.get_temperature(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
 # TODO implement api
 @routes.get('/data')
@@ -65,25 +74,29 @@ async def get_data(request):
     downsample = False
     if 'downsample' in request.rel_url.query:
         downsample = request.rel_url.query['downsample']
-    return web.Response(text=json.dumps(await api.get_recorded_data(request.app, downsample=downsample)))
+    data, status = await api.get_recorded_data(request.app, downsample=downsample)
+    return web.Response(text=json.dumps(data), status=status)
 
-# TODO implement api
+
 @routes.put('/job')
 async def set_job(request):
     job_info = request.rel_url.query
-    return web.Response(text=json.dumps(await api.set_job(request.app, job_info)))
+    data, status = await api.set_job(request.app, job_info)
+    return web.Response(text=json.dumps(data), status=status)
 
 # TODO implement api
 @routes.put('/start')
 async def set_job_start(request):
-    return web.Response(text=json.dumps(await api.start_job(request.app)))
+    data, status = await api.start_job(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
 # TODO implement api
 @routes.put('/stop')
 async def set_job_stop(request):
-    return web.Response(text=json.dumps(await api.stop_job(request.app)))
+    data, status = await api.stop_job(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
-# TODO implement api
+
 @routes.put('/temperature')
 async def set_temperature(request):
     mode = ControlMode.Point
@@ -92,17 +105,20 @@ async def set_temperature(request):
     value = 25
     if 'value' in request.rel_url.query:
         value = request.rel_url.query['value']
-    return web.Response(text=json.dumps(await api.set_temperature(request.app, mode, value)))
+    data, status = await api.set_temperature(request.app, mode, value)
+    return web.Response(text=json.dumps(data), status=status)
 
 
 @routes.put('/enable')
 async def enable_oven(request):
-    return web.Response(text=json.dumps(await api.enable(request.app)))
+    data, status = await api.enable(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
 
 @routes.put('/disable')
 async def disable_oven(request):
-    return web.Response(text=json.dumps(await api.disable(request.app)))
+    data, status = await api.disable(request.app)
+    return web.Response(text=json.dumps(data), status=status)
 
 
 @routes.get('/ws')

@@ -1,5 +1,6 @@
 import glob
 import time
+import json
 
 from app import serial
 from .types import make_connection_response, make_status_response, SerialResponse, make_job_status
@@ -36,7 +37,6 @@ def handle_error_response(resp):
 
 def decode_status_byte(app, data):
     data_arr = data.split(' ')
-    print(data_arr)
     status_byte = int(data_arr[1], 16)
     temp_target_value = float(data_arr[2])
 
@@ -64,7 +64,6 @@ async def get_status(app):
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 
-
     decode_status_byte(app, resp.data)
 
     return make_status_response(app), 200
@@ -81,7 +80,7 @@ def get_usb_serial_devices():
 async def connect(app, port=None):
     ser = app['ctx'].serial
     await serial.connect(app, ser.port if port is None else port)
-    return make_connection_response(app)
+    return make_connection_response(app), 200
 
 
 async def get_job_status(app):
@@ -93,18 +92,35 @@ async def get_job_status(app):
 
     return make_job_status(app), 200
 
-# TODO implement me
+
 async def set_job(app, job_settings):
-    # TODO implement me
-    return {}
+    if 'save' in job_settings:
+        app['ctx'].job.save = json.loads(job_settings['save'])
+    if 'type' in job_settings:
+        if job_settings['type'] == JobType.Reflow.value:
+            app['ctx'].job.type = JobType.Reflow
+        if job_settings['type'] == JobType.Tune.value:
+            app['ctx'].job.type = JobType.Tune
+    if 'details' in job_settings:
+        app['ctx'].job.details = job_settings['details']
+    if 'profile' in job_settings:
+        if job_settings['profile'] in app['ctx'].profiles:
+            app['ctx'].job.profile = job_settings['profile']
+
+    return make_job_status(app), 200
 
 # TODO implement me
 async def start_job(app):
-    return {}
+    # TODO start job -
+    # if we have set the job mode to tuning, send the tune command
+    # if it is reflow mode, start
+
+    return make_status_response(app), 200
 
 # TODO implement me
 async def stop_job(app):
-    return {}
+    # TODO send idle command
+    return make_status_response(app), 200
 
 
 async def get_temperature(app):

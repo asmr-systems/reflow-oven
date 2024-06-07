@@ -90,6 +90,14 @@ public:
         this->status = ControlStatus::Idle;
     }
 
+    void start() {
+        // ignore if we are tuning or disabled
+        if (this->status == ControlStatus::Tuning || !this->heating_enabled)
+            return;
+
+        this->status = ControlStatus::Running;
+    }
+
     void request_temp(float temp) {
         this->requested.value = temp;
         this->mode = ControlMode::SetPoint;

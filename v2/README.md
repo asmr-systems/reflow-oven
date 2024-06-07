@@ -14,6 +14,40 @@
 - [ ] implement straight-forward firmware serial API
 - [ ] implement straight-forward server API (with websocket API)
 
+## Controller Functions
+* get status
+ - heating elements enabled
+ - state: idle, running, tuning
+ - current tuning phase: n/a, steady state, velocity, inertia
+ - control mode: point, rate, duty cycle
+* disable/enable heating elements
+* go idle
+* set temp point (puts in run state)
+* set temp rate (puts in run state)
+* set heater duty cycle (puts in run state)
+* tune all
+* tune steady state
+* tune velocity
+* tune inertia
+* set data TBD
+* get data TBD
+* get info TBD
+* reset
+
+## Daemon Functions
+* list usb serial devices
+* connect to a reflow oven -- returns status
+* get status/job
+ - connected
+ - oven
+ - job status
+ -
+* enable/disable oven
+* start/stop job
+* load/store profile
+* records temperature during jobs
+
+
 ## Notes
 ### Separation of Concerns
 #### Controller (firmware)

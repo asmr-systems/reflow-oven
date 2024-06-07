@@ -16,7 +16,6 @@ config = {
 class Config:
     class Serial:
         def __init__(self):
-            self.port = '/dev/ttyUSB0'
             self.baud = 9600
 
     def __init__(self):

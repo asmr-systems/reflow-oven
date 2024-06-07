@@ -1,9 +1,11 @@
+import asyncio
 import aiohttp
 
-from app import serial_worker
+from app import serial
 from .settings import config
 from .routes import routes
-from .context import Context
+from .serial import read_handler, write_handler
+from .context import Context, record_timeseries, broadcast
 
 # TODO:
 # [ ] add proper logging
@@ -28,6 +30,13 @@ from .context import Context
 # [ ] ENSURE ON CLOSE LOGIC ACTUALLY STOPS OVEN
 
 
+async def on_startup(app):
+    asyncio.create_task(read_handler(app))
+    asyncio.create_task(write_handler(app))
+    asyncio.create_task(broadcast(app))
+    asyncio.create_task(record_timeseries(app))
+
+
 # NOTE: this isn't being called when GracefulExit occurs. only ctrl-c quit.
 # Idea: instead of raising GracefulExit, send a SIGTERM signal to program?
 async def on_shutdown(app):
@@ -35,11 +44,11 @@ async def on_shutdown(app):
         await ws.close(code=aiohttp.WSCloseCode.GOING_AWAY, message="Server shutdown")
 
 
-def init():
+def init(close_on_zero_clients=False):
   app = aiohttp.web.Application()
-  app['ctx'] = Context()
+  app['ctx'] = Context(close_on_zero_clients=close_on_zero_clients)
 
-  app.on_startup.append(serial_worker.startup)
+  app.on_startup.append(on_startup)
   app.on_shutdown.append(on_shutdown)
   app.add_routes(routes)
 

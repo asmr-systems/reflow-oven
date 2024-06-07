@@ -50,9 +50,10 @@ public:
     } data;
 
     struct {
-        float       point        = 25; // C
-        float       rate         = 0;  // C/s
-        uint8_t     duty_cycle   = 0;  // [0, 100]
+        float       point        = 25; // C TODO REMOVE
+        float       rate         = 0;  // C/s TODO REMOVE
+        float       duty_cycle   = 0;  // [0, 1.0] TODO REMOVE
+        float       value        = 0;  // temp point, rate, or duty cycle
         TuningPhase tuning_phase = TuningPhase::All;
     } requested;
 
@@ -90,23 +91,20 @@ public:
     }
 
     void request_temp(float temp) {
-        this->requested.point = temp;
+        this->requested.value = temp;
         this->mode = ControlMode::SetPoint;
-        this->status = ControlStatus::Running;
     }
 
     void request_temp_rate(float temp_rate) {
-        this->requested.rate = temp_rate;
+        this->requested.value = temp_rate;
         this->mode = ControlMode::Rate;
-        this->status = ControlStatus::Running;
     }
 
-    void request_duty_cycle(uint8_t duty_cycle) {
-        if (duty_cycle > 100)
-            duty_cycle = 100;
-        this->requested.duty_cycle = duty_cycle;
+    void request_duty_cycle(float duty_cycle) {
+        if (duty_cycle > 1.0)
+            duty_cycle = 1.0;
+        this->requested.value = duty_cycle;
         this->mode = ControlMode::DutyCycle;
-        this->status = ControlStatus::Running;
     }
 
     void request_tuning_phase(TuningPhase phase) {

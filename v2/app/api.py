@@ -34,7 +34,12 @@ def handle_error_response(resp):
         return resp.data, 500 # return 503 Internal Server Error
     return resp.data, 200
 
-def decode_status_byte(app, status_byte):
+def decode_status_byte(app, data):
+    data_arr = data.split(' ')
+    print(data_arr)
+    status_byte = int(data_arr[1], 16)
+    temp_target_value = float(data_arr[2])
+
     enabled = (0x01 & status_byte) == 1
     control_status = (0x06 & status_byte) >> 1 # 0:idle, 1:running, 2:tuning
     tuning_phase = (0x18 & status_byte) >> 3 # 0:n/a, 1:steady-state, 2:velocity, 3:inertia
@@ -43,6 +48,7 @@ def decode_status_byte(app, status_byte):
     app['ctx'].oven.enabled = enabled
     app['ctx'].oven.mode = [None, ControlMode.Point, ControlMode.Rate, ControlMode.DutyCycle][control_mode]
     app['ctx'].oven.status = [ControlStatus.Idle, ControlStatus.Running, ControlStatus.Tuning][control_status]
+    app['ctx'].oven.target = temp_target_value
 
     if tuning_phase != 0 and app['ctx'].oven.status == ControlStatus.Tuning:
         app['ctx'].job.type = JobType.Tuning
@@ -58,7 +64,8 @@ async def get_status(app):
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 
-    decode_status_byte(app, int(resp.data.split(' ')[1], 16))
+
+    decode_status_byte(app, resp.data)
 
     return make_status_response(app), 200
 
@@ -68,7 +75,7 @@ def get_usb_serial_devices():
         'action': 'get',
         'type': 'devices',
         'data': glob.glob('/dev/ttyUSB*'),
-    }
+    }, 200
 
 
 async def connect(app, port=None):
@@ -82,9 +89,9 @@ async def get_job_status(app):
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 
-    decode_status_byte(app, int(resp.data.split(' ')[1], 16))
+    decode_status_byte(app, resp.data)
 
-    return make_job_status(app)
+    return make_job_status(app), 200
 
 # TODO implement me
 async def set_job(app, job_settings):
@@ -118,17 +125,28 @@ async def get_temperature(app):
     app['ctx'].oven.latest_temp = data['temperature']
     await app['ctx'].job.record.put(data)
 
-    return make_temperature_response(data)
+    return make_temperature_response(data), 200
 
 # TODO implement me
 async def get_recorded_data(app, downsample=False):
     # read recorded data and pass back in arrays
     pass
 
-# TODO implement me
+
 async def set_temperature(app, mode, value):
-    # TODO check stuff
-    pass
+    command = 'G'
+    if mode == ControlMode.Rate.value:
+        command = 'H'
+    elif mode == ControlMode.DutyCycle.value:
+        command = 'I'
+
+    resp = await serial_request(app, f"{command} {value}")
+    if resp.status != SerialResponse.Status.Ok:
+        return handle_error_response(resp)
+
+    decode_status_byte(app, resp.data)
+
+    return make_status_response(app), 200
 
 
 async def enable(app):
@@ -144,6 +162,6 @@ async def set_enable(app, enable=True):
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 
-    decode_status_byte(app, int(resp.data.split(' ')[1], 16))
+    decode_status_byte(app, resp.data)
 
     return make_status_response(app), 200

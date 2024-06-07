@@ -27,6 +27,7 @@ public:
     static const uint8_t StartByte = 0x02; // ASCII STX
     static const uint8_t Delimiter = 0x20; // ASCII SPACE
 
+    // TODO: make start/stop command
     enum class Command {
         Status          = 'A',
         Info            = 'B',
@@ -94,15 +95,15 @@ public:
                 break;
             case Command::SetTemp:
                 this->state->request_temp(get_word(msg, 1).toFloat());
-                send_scalar_temp_target();
+                send_status();
                 break;
             case Command::SetTempSlope:
                 this->state->request_temp_rate(get_word(msg, 1).toFloat());
-                send_slope_temp_target();
+                send_status();
                 break;
             case Command::SetDutyCycle:
-                this->state->request_duty_cycle(get_word(msg, 1).toInt());
-                send_duty_cycle();
+                this->state->request_duty_cycle(get_word(msg, 1).toFloat());
+                send_status();
                 break;
             case Command::TuneAll:
                 this->state->request_tuning_phase(TuningPhase::All);
@@ -159,13 +160,13 @@ public:
         uint8_t ctrl_stat = 0x00;
         switch (this->state->status) {
         case ControlStatus::Idle:
-            ctrl_stat = 0x00;
+            ctrl_stat = 0b00;
             break;
         case ControlStatus::Running:
-            ctrl_stat = 0x01;
+            ctrl_stat = 0b01;
             break;
         case ControlStatus::Tuning:
-            ctrl_stat = 0x10;
+            ctrl_stat = 0b10;
             break;
         }
         // DATA[3:4] - 0:n/a, 1:tuning steady-state, 2:tuning velocity, 3:tuning inertia
@@ -173,36 +174,39 @@ public:
         if (this->state->status == ControlStatus::Tuning) {
             switch (this->state->tuning_phase) {
             case TuningPhase::SteadyState:
-                tuning_phase = 0x01;
+                tuning_phase = 0b01;
                 break;
             case TuningPhase::Velocity:
-                tuning_phase = 0x10;
+                tuning_phase = 0b10;
                 break;
             case TuningPhase::Inertia:
-                tuning_phase = 0x11;
+                tuning_phase = 0b11;
                 break;
             }
         }
         // DATA[5:6] - 0:n/a, 1:set_point, 2:rate, 3:duty_cycle
         uint8_t ctrl_mode = 0x00;
-        if (this->state->status == ControlStatus::Running) {
-            switch (this->state->mode) {
-            case ControlMode::SetPoint:
-                ctrl_mode = 0x01;
-                break;
-            case ControlMode::Rate:
-                ctrl_mode = 0x10;
-                break;
-            case ControlMode::DutyCycle:
-                ctrl_mode = 0x11;
-                break;
-            }
+        switch (this->state->mode) {
+        case ControlMode::SetPoint:
+            ctrl_mode = 0b01;
+            break;
+        case ControlMode::Rate:
+            ctrl_mode = 0b10;
+            break;
+        case ControlMode::DutyCycle:
+            ctrl_mode = 0b11;
+            break;
         }
+
         uint8_t data = (ctrl_mode << 5) | (tuning_phase << 3) | (ctrl_stat << 1) | ctrl_enabled;
 
         char buf[4];
         sprintf(buf, "%02X", data);
-        Serial.println(buf);
+        Serial.write(buf);
+        Serial.write(Delimiter);
+
+        // send current requested value (point, rate, or duty cycle)
+        Serial.println(this->state->requested.value);
     }
 
     void send_info() {
@@ -215,36 +219,6 @@ public:
 
         // TODO send more stuff
         Serial.println();
-    }
-
-    void send_scalar_temp_target() {
-        // StartByte
-        Serial.write(StartByte);
-        // SetTemp STR_FLOAT
-        Serial.write((uint8_t)Command::SetTemp);
-        Serial.write(Delimiter);
-
-        Serial.println(this->state->requested.point);
-    }
-
-    void send_slope_temp_target() {
-        // StartByte
-        Serial.write(StartByte);
-        // SetTempSlope STR_FLOAT
-        Serial.write((uint8_t)Command::SetTempSlope);
-        Serial.write(Delimiter);
-
-        Serial.println(this->state->requested.rate);
-    }
-
-    void send_duty_cycle() {
-        // StartByte
-        Serial.write(StartByte);
-        // SetDutyCycle
-        Serial.write((uint8_t)Command::SetDutyCycle);
-        Serial.write(Delimiter);
-
-        Serial.println(this->state->requested.duty_cycle);
     }
 
 private:

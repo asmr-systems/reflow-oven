@@ -55,6 +55,7 @@ class Context:
             self.name             = "bismuth" # TODO get from controller
             self.status           = ControlStatus.Idle
             self.mode             = ControlMode.Point
+            self.target           = 0.0
             self.max_temp         = None
             self.learned_velocity = None
             self.learned_inertia  = None

@@ -77,6 +77,7 @@ def make_oven_status(app):
             'name': app['ctx'].oven.name,
             'status': app['ctx'].oven.status,
             'mode': app['ctx'].oven.mode,
+            'target': app['ctx'].oven.target,
             'max_temp': app['ctx'].oven.max_temp,
             'learned_velocity': app['ctx'].oven.learned_velocity,
             'learned_inertia': app['ctx'].oven.learned_inertia,

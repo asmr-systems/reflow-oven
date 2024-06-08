@@ -12,7 +12,8 @@ class Config:
             self.baud = 115200
 
     def __init__(self):
-        self.static_dir  = STATIC_DIR
-        self.data_dir    = DATA_DIR
-        self.serial      = Config.Serial()
-        self.profiles_fn = DATA_DIR / 'profiles.json'
+        self.static_dir    = STATIC_DIR
+        self.data_dir      = DATA_DIR
+        self.serial        = Config.Serial()
+        self.profiles_fn   = DATA_DIR / 'profiles.json'
+        self.loop_period_s = 0.4

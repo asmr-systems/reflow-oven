@@ -116,11 +116,15 @@ async def start_job(app):
         return make_status_response(app), 200
 
     if app['ctx'].job.type == JobType.Reflow:
-        # TODO handle error when no profile is selected
+        if app['ctx'].job.profile == None:
+           app['ctx'].job.profile = app['ctx'].default_profile
+
         resp = await serial_request(app, "P")
         if resp.status != SerialResponse.Status.Ok:
             return handle_error_response(resp)
         decode_status_byte(app, resp.data)
+        app['ctx'].job.phase = app['ctx'].profiles[app['ctx'].job.profile][0]
+        app['ctx'].job.phase['start_time'] = time.time()
 
     elif app['ctx'].job.type == JobType.Tune:
         command = 'J' # all

@@ -18,7 +18,7 @@ class Context:
             self.rx        = asyncio.Queue()
             self.lock      = asyncio.Lock()
 
-        async def request(self, msg):
+        async def request(self, msg, timeout=2):
             # await self.tx.put(msg)
             # await self.rx.get()
             response = None
@@ -28,7 +28,7 @@ class Context:
                 while retry:
                     try:
                         await self.tx.put(msg)
-                        response = await asyncio.wait_for(self.rx.get(), timeout=2)
+                        response = await asyncio.wait_for(self.rx.get(), timeout=timeout)
                         retry = False
                     except asyncio.TimeoutError:
                         print("request timed out, retrying...")
@@ -46,7 +46,7 @@ class Context:
             self.start_time      = None
             self.elapsed_seconds = None
             self.profile         = None
-            self.phase           = TuningPhase.Standby
+            self.phase           = TuningPhase.All
             self.data_file       = None # <oven_name>_<start_time>.csv
             self.details         = ""
 
@@ -61,7 +61,6 @@ class Context:
             self.learned_inertia  = None
             self.max_rate         = None
             self.enabled          = False
-            self.latest_temp      = None
 
 
     def __init__(self, close_on_zero_clients=False):

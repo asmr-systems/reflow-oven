@@ -1,3 +1,4 @@
+import time
 from enum import Enum
 
 
@@ -21,7 +22,6 @@ class TuningPhase(str, Enum):
     SteadyState = "steady_state"
     Velocity    = "velocity"
     Inertia     = "inertia"
-    Standby     = "standby"
 
 class ControlMode(str, Enum):
     Point     = "point"
@@ -56,6 +56,9 @@ def make_connection_response(app):
 
 
 def make_job_status(app):
+    if app['ctx'].job.status == JobStatus.Running:
+        app['ctx'].job.elapsed_seconds = time.time() - app['ctx'].job.start_time
+
     return {
         'action': 'get',
         'type': 'job',
@@ -85,7 +88,6 @@ def make_oven_status(app):
             'learned_inertia': app['ctx'].oven.learned_inertia,
             'max_rate': app['ctx'].oven.max_rate,
             'enabled': app['ctx'].oven.enabled,
-            'latest_temp': app['ctx'].oven.latest_temp,
         }
     }
 

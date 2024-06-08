@@ -94,6 +94,9 @@ public:
                 this->state->go_idle();
                 send_status();
                 break;
+            case Command::GetTemp:
+                send_current_temp();
+                break;
             case Command::SetTemp:
                 this->state->request_temp(get_word(msg, 1).toFloat());
                 send_status();
@@ -212,6 +215,17 @@ public:
 
         // send current requested value (point, rate, or duty cycle)
         Serial.println(this->state->requested.value);
+    }
+
+    void send_current_temp() {
+        // StartByte
+        Serial.write(StartByte);
+
+        // Status <DATA>
+        Serial.write((uint8_t)Command::GetTemp);
+        Serial.write(Delimiter);
+
+        Serial.println(this->state->data.temp);
     }
 
     void send_info() {

@@ -62,8 +62,8 @@ public:
 
     void begin() {
         pinMode(therm_cs_pin, OUTPUT);
-        // SPI.begin();
-        // thermocouple.begin();
+        SPI.begin();
+        thermocouple.begin();
         // eeprom.begin();
 
         reset();

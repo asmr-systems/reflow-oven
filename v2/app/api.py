@@ -12,11 +12,11 @@ def has_start_byte(msg):
     return msg[0] == '\x02'
 
 
-async def serial_request(app, command):
+async def serial_request(app, command, timeout=2):
     if not app['ctx'].serial.connected:
         return SerialResponse(app, SerialResponse.Status.ConnectionError)
 
-    resp = await app['ctx'].serial.request("\x02" + command)
+    resp = await app['ctx'].serial.request("\x02" + command, timeout=timeout)
 
     if not has_start_byte(resp):
         return SerialResponse(app, SerialResponse.Status.SerialError)
@@ -111,9 +111,34 @@ async def set_job(app, job_settings):
 
 # TODO implement me
 async def start_job(app):
-    # TODO start job -
-    # if we have set the job mode to tuning, send the tune command
-    # if it is reflow mode, start
+    if app['ctx'].job.status == JobStatus.Running:
+        return make_status_response(app), 200
+
+    if app['ctx'].job.type == JobType.Reflow:
+        # TODO handle error when no profile is selected
+        resp = await serial_request(app, "P")
+        if resp.status != SerialResponse.Status.Ok:
+            return handle_error_response(resp)
+        decode_status_byte(app, resp.data)
+
+    elif app['ctx'].job.type == JobType.Tune:
+        command = 'J' # all
+        if app['ctx'].job.phase == TuningPhase.SteadyState:
+            command = 'K'
+        if app['ctx'].job.phase == TuningPhase.Velocity:
+            command = 'L'
+        if app['ctx'].job.phase == TuningPhase.Inertia:
+            command = 'M'
+
+        resp = await serial_request(app, command)
+        if resp.status != SerialResponse.Status.Ok:
+            return handle_error_response(resp)
+        decode_status_byte(app, resp.data)
+
+    if app['ctx'].oven.status == ControlStatus.Running:
+        app['ctx'].job.status = JobStatus.Running
+        app['ctx'].job.start_time = time.time()
+        app['ctx'].job.elapsed_seconds = 0
 
     return make_status_response(app), 200
 
@@ -124,7 +149,7 @@ async def stop_job(app):
 
 
 async def get_temperature(app):
-    resp = await serial_request(app, "F")
+    resp = await serial_request(app, "F", timeout=10)
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 

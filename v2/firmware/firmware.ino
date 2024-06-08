@@ -58,8 +58,7 @@ void setup() {
 
 void loop() {
 
-
-    // state.record_temp();
+    state.record_temp();
 
     comms.handle_incoming_messages();
 

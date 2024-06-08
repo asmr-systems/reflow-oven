@@ -5,6 +5,8 @@ import asyncio
 from app import types
 from .settings import Config
 from .types import JobStatus, JobType, TuningPhase, ControlMode, ControlStatus
+from .types import make_status_response
+from .api import get_temperature
 
 
 class Context:
@@ -40,7 +42,7 @@ class Context:
     class Job:
         def __init__(self):
             self.record          = asyncio.Queue()
-            self.save            = True
+            self.save            = False
             self.status          = JobStatus.Pending
             self.type            = JobType.Reflow
             self.start_time      = None
@@ -71,6 +73,7 @@ class Context:
         self.serial                = Context.Serial()
         self.profiles              = self.init_profiles()
         self.job                   = Context.Job()
+        self.job_q                 = asyncio.Queue()
         self.oven                  = Context.Oven()
         self.state                 = {
             'oven_on': False,
@@ -92,10 +95,10 @@ async def record_timeseries(app):
         job = app['ctx'].job
         data = await job.record.get()
 
-        if job.status is JobStatus.Pending or not job.save:
+        if job.status != JobStatus.Running or not job.save:
             continue
 
-        with open(job.data_file, "a") as myfile:
+        with open(app['ctx'].config.data_dir / job.data_file, "a") as myfile:
             myfile.write(f'{data["time"]},{data["temperature"]}\n')
 
 
@@ -104,3 +107,42 @@ async def broadcast(app):
         msg = await app['ctx'].broadcasts.get()
         for ws in app['ctx'].websockets.values():
             await ws.send_str(msg)
+
+
+async def manage_jobs(app):
+    while True:
+        run = await app['ctx'].job_q.get()
+        initialize = True
+        while run:
+            msg, status = await get_temperature(app)
+            # TODO handle if status is not 200
+            await app['ctx'].broadcasts.put(msg)
+            await app['ctx'].job.record.put(msg['data'])
+
+            if app['ctx'].job.type == JobType.Reflow:
+                run = await manage_reflow(app, msg['data'], initialize=initialize)
+            elif app['ctx'].job.type == JobType.Tune:
+                run = await manage_tune(app, msg['data'], initialize=initialize)
+
+            if not run:
+                # the job was completed, broadcast a complete status
+                await app['ctx'].broadcasts.put(make_status_response(app))
+
+            if not app['ctx'].job_q.empty():
+                run = await app['ctx'].job_q.get()
+
+            initialize = False
+
+
+async def manage_reflow(app, temp_data, initialize=False):
+    if initialize:
+        print("initializing")
+    else:
+        print("done")
+        return False
+
+    return True
+
+
+async def manage_tune(app, temp_data, initialize=False):
+    return True

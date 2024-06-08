@@ -2,10 +2,9 @@ import asyncio
 import aiohttp
 
 from app import serial
-from .settings import config
 from .routes import routes
 from .serial import read_handler, write_handler
-from .context import Context, record_timeseries, broadcast
+from .context import Context, record_timeseries, broadcast, manage_jobs
 
 # TODO:
 # [ ] add proper logging
@@ -35,6 +34,7 @@ async def on_startup(app):
     asyncio.create_task(write_handler(app))
     asyncio.create_task(broadcast(app))
     asyncio.create_task(record_timeseries(app))
+    asyncio.create_task(manage_jobs(app))
 
 
 # NOTE: this isn't being called when GracefulExit occurs. only ctrl-c quit.

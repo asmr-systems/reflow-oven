@@ -1,6 +1,7 @@
 import glob
 import time
 import json
+import datetime
 
 from app import serial
 from .types import make_connection_response, make_status_response, SerialResponse, make_job_status
@@ -139,6 +140,11 @@ async def start_job(app):
         app['ctx'].job.status = JobStatus.Running
         app['ctx'].job.start_time = time.time()
         app['ctx'].job.elapsed_seconds = 0
+        t_str = datetime.datetime.fromtimestamp(
+            app['ctx'].job.start_time
+        ).strftime("%Y-%m-%dT%H:%M:%S")
+        app['ctx'].job.data_file = f"{app['ctx'].oven.name}_{t_str}.csv"
+        await app['ctx'].job_q.put(True)
 
     return make_status_response(app), 200
 
@@ -153,6 +159,7 @@ async def stop_job(app):
         app['ctx'].job.status = JobStatus.Aborted
         app['ctx'].job.type = JobType.Reflow
         app['ctx'].job.elapsed_seconds = time.time() - app['ctx'].job.start_time
+        await app['ctx'].job_q.put(False)
         # TODO close recording file if necessary
 
     return make_status_response(app), 200
@@ -172,9 +179,6 @@ async def get_temperature(app):
         'time': time.time(),
         'temperature': float(resp.data[1:]),
     }
-
-    app['ctx'].oven.latest_temp = data['temperature']
-    await app['ctx'].job.record.put(data)
 
     return make_temperature_response(data), 200
 

@@ -20,7 +20,7 @@
 
 class Comms {
 public:
-    int baud;
+    unsigned long baud;
     State* state;
     int temp_update_ms;
 
@@ -48,7 +48,7 @@ public:
         Reset           = 'Z',
     };
 
-    Comms(State* state, int temp_update_ms = 100, int baud = 9600)
+    Comms(State* state, int temp_update_ms = 100, unsigned long baud = 115200)
         : state(state), temp_update_ms(temp_update_ms), baud(baud) {}
 
     void begin() {
@@ -59,7 +59,7 @@ public:
 
         while (Serial.available()) {
 
-            String msg = Serial.readString();
+            String msg = Serial.readStringUntil('\n');
             msg.trim();
 
             // if first character isn't start transmission, ignore message.

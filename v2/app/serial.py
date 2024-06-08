@@ -75,7 +75,7 @@ async def write_handler(app):
         retry = True
         while retry:
             try:
-                writer.write(cmd.encode())
+                writer.write(f'{cmd}\n'.encode())
                 await writer.drain()
                 retry = False
             except SerialException:

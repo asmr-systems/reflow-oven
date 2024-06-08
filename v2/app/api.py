@@ -109,7 +109,7 @@ async def set_job(app, job_settings):
 
     return make_job_status(app), 200
 
-# TODO implement me
+
 async def start_job(app):
     if app['ctx'].job.status == JobStatus.Running:
         return make_status_response(app), 200
@@ -142,9 +142,19 @@ async def start_job(app):
 
     return make_status_response(app), 200
 
-# TODO implement me
+
 async def stop_job(app):
-    # TODO send idle command
+    resp = await serial_request(app, "E") # Idle command
+    if resp.status != SerialResponse.Status.Ok:
+            return handle_error_response(resp)
+    decode_status_byte(app, resp.data)
+
+    if app['ctx'].oven.status == ControlStatus.Idle:
+        app['ctx'].job.status = JobStatus.Aborted
+        app['ctx'].job.type = JobType.Reflow
+        app['ctx'].job.elapsed_seconds = time.time() - app['ctx'].job.start_time
+        # TODO close recording file if necessary
+
     return make_status_response(app), 200
 
 

@@ -84,13 +84,13 @@ async def set_job(request):
     data, status = await api.set_job(request.app, job_info)
     return web.Response(text=json.dumps(data), status=status)
 
-# TODO implement api
+
 @routes.put('/start')
 async def set_job_start(request):
     data, status = await api.start_job(request.app)
     return web.Response(text=json.dumps(data), status=status)
 
-# TODO implement api
+
 @routes.put('/stop')
 async def set_job_stop(request):
     data, status = await api.stop_job(request.app)

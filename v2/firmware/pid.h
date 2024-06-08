@@ -23,7 +23,9 @@ public:
         : Kp(Kp), Ki(Ki), Kd(Kd) {}
 
     // outputs new duty cycle for powering heating elements
-    double setpoint(double set_point, double current_temp) {
+    double setpoint(double set_point, double set_rate, double current_temp) {
+        // TODO take set_rate into account
+
         // dt is in milliseconds.
         static double output       = 100;
         static int    start_time   = 0;
@@ -54,11 +56,6 @@ public:
         output += dout;
 
         return constrain(output, 0, 100);
-    }
-
-    double setrate(double set_rate, double current_temp) {
-        // TODO return somethign real
-        return 0;
     }
 
     TuningResult tune(TuningPhase phase, double temp, unsigned long time) {

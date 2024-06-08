@@ -25,7 +25,6 @@ class TuningPhase(str, Enum):
 
 class ControlMode(str, Enum):
     Point     = "point"
-    Rate      = "rate"
     DutyCycle = "duty_cycle"
 
 
@@ -83,6 +82,7 @@ def make_oven_status(app):
             'status': app['ctx'].oven.status,
             'mode': app['ctx'].oven.mode,
             'target': app['ctx'].oven.target,
+            'rate': app['ctx'].oven.rate,
             'max_temp': app['ctx'].oven.max_temp,
             'learned_velocity': app['ctx'].oven.learned_velocity,
             'learned_inertia': app['ctx'].oven.learned_inertia,

@@ -95,13 +95,14 @@ void loop() {
         double duty_cycle;
 
         if (state.mode == ControlMode::SetPoint) {
-            duty_cycle = pid.setpoint(state.requested.point, state.data.temp);
-        }
-        if (state.mode == ControlMode::Rate) {
-            duty_cycle = pid.setrate(state.requested.rate, state.data.temp);
+            duty_cycle = pid.setpoint(
+                state.requested.value,
+                state.requested.rate,
+                state.data.temp
+            );
         }
         if (state.mode == ControlMode::DutyCycle) {
-            duty_cycle = state.requested.duty_cycle;
+            duty_cycle = state.requested.value;
         }
 
         driver.set(duty_cycle);

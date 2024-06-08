@@ -105,7 +105,10 @@ async def set_temperature(request):
     value = 25
     if 'value' in request.rel_url.query:
         value = request.rel_url.query['value']
-    data, status = await api.set_temperature(request.app, mode, value)
+    rate = 0
+    if 'rate' in request.rel_url.query:
+        rate = request.rel_url.query['rate']
+    data, status = await api.set_temperature(request.app, mode, value, rate=rate)
     return web.Response(text=json.dumps(data), status=status)
 
 

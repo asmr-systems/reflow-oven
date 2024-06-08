@@ -36,7 +36,7 @@ public:
         Idle            = 'E',
         GetTemp         = 'F',
         SetTemp         = 'G',
-        SetTempSlope    = 'H',
+        // SetTempSlope    = 'H', // TODO REMOVE THIS
         SetDutyCycle    = 'I',
         TuneAll         = 'J',
         TuneSteadyState = 'K',
@@ -98,11 +98,10 @@ public:
                 send_current_temp();
                 break;
             case Command::SetTemp:
-                this->state->request_temp(get_word(msg, 1).toFloat());
-                send_status();
-                break;
-            case Command::SetTempSlope:
-                this->state->request_temp_rate(get_word(msg, 1).toFloat());
+                this->state->request_temp(
+                    get_word(msg, 1).toFloat(),
+                    get_word(msg, 2).toFloat()
+                );
                 send_status();
                 break;
             case Command::SetDutyCycle:
@@ -192,17 +191,14 @@ public:
                 break;
             }
         }
-        // DATA[5:6] - 0:n/a, 1:set_point, 2:rate, 3:duty_cycle
+        // DATA[5] - 0:set_point, 1:duty_cycle
         uint8_t ctrl_mode = 0x00;
         switch (this->state->mode) {
         case ControlMode::SetPoint:
-            ctrl_mode = 0b01;
-            break;
-        case ControlMode::Rate:
-            ctrl_mode = 0b10;
+            ctrl_mode = 0b0;
             break;
         case ControlMode::DutyCycle:
-            ctrl_mode = 0b11;
+            ctrl_mode = 0b1;
             break;
         }
 
@@ -213,8 +209,11 @@ public:
         Serial.write(buf);
         Serial.write(Delimiter);
 
-        // send current requested value (point, rate, or duty cycle)
-        Serial.println(this->state->requested.value);
+        // send current requested value (point or duty cycle)
+        Serial.print(this->state->requested.value);
+        Serial.write(Delimiter);
+        // send requested rate-- if we are in duty cycle mode, this is meaningless
+        Serial.println(this->state->requested.rate);
     }
 
     void send_current_temp() {

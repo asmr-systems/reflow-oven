@@ -29,7 +29,6 @@ enum class ControlStatus {
 
 enum class ControlMode {
     SetPoint,
-    Rate,
     DutyCycle,
 };
 
@@ -50,10 +49,8 @@ public:
     } data;
 
     struct {
-        float       point        = 25; // C TODO REMOVE
-        float       rate         = 0;  // C/s TODO REMOVE
-        float       duty_cycle   = 0;  // [0, 1.0] TODO REMOVE
-        float       value        = 0;  // temp point, rate, or duty cycle
+        float       rate         = 0;   // C/s
+        float       value        = 25;  // temp point or duty cycle
         TuningPhase tuning_phase = TuningPhase::All;
     } requested;
 
@@ -98,20 +95,17 @@ public:
         this->status = ControlStatus::Running;
     }
 
-    void request_temp(float temp) {
+    void request_temp(float temp, float rate) {
         this->requested.value = temp;
+        this->requested.rate  = rate;
         this->mode = ControlMode::SetPoint;
-    }
-
-    void request_temp_rate(float temp_rate) {
-        this->requested.value = temp_rate;
-        this->mode = ControlMode::Rate;
     }
 
     void request_duty_cycle(float duty_cycle) {
         if (duty_cycle > 1.0)
             duty_cycle = 1.0;
         this->requested.value = duty_cycle;
+        this->requested.rate  = 0;
         this->mode = ControlMode::DutyCycle;
     }
 

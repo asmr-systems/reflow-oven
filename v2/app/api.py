@@ -40,16 +40,18 @@ def decode_status_byte(app, data):
     data_arr = data.split(' ')
     status_byte = int(data_arr[1], 16)
     temp_target_value = float(data_arr[2])
+    temp_target_rate = float(data_arr[3])
 
     enabled = (0x01 & status_byte) == 1
     control_status = (0x06 & status_byte) >> 1 # 0:idle, 1:running, 2:tuning
     tuning_phase = (0x18 & status_byte) >> 3 # 0:n/a, 1:steady-state, 2:velocity, 3:inertia
-    control_mode = (0x60 & status_byte) >> 5 # 0:n/a, 1:point, 2:rate, 3:duty_cycle
+    control_mode = (0x20 & status_byte) >> 5 # 0:point, 1:duty_cycle
 
     app['ctx'].oven.enabled = enabled
-    app['ctx'].oven.mode = [None, ControlMode.Point, ControlMode.Rate, ControlMode.DutyCycle][control_mode]
+    app['ctx'].oven.mode = [ControlMode.Point, ControlMode.DutyCycle][control_mode]
     app['ctx'].oven.status = [ControlStatus.Idle, ControlStatus.Running, ControlStatus.Tuning][control_status]
     app['ctx'].oven.target = temp_target_value
+    app['ctx'].oven.rate = temp_target_rate
 
     if tuning_phase != 0 and app['ctx'].oven.status == ControlStatus.Tuning:
         app['ctx'].job.type = JobType.Tuning
@@ -192,14 +194,14 @@ async def get_recorded_data(app, downsample=False):
     pass
 
 
-async def set_temperature(app, mode, value):
+async def set_temperature(app, mode, value, rate=0):
     command = 'G'
-    if mode == ControlMode.Rate.value:
-        command = 'H'
+    if mode == ControlMode.Point.value:
+        command = 'G'
     elif mode == ControlMode.DutyCycle.value:
         command = 'I'
 
-    resp = await serial_request(app, f"{command} {value}")
+    resp = await serial_request(app, f"{command} {value} {rate}")
     if resp.status != SerialResponse.Status.Ok:
         return handle_error_response(resp)
 
